@@ -9,10 +9,11 @@ A simplified Python script to manage GitHub Copilot license holders with a two-c
   - `PRUs_allowed_costCenter`: Exception cost center for users allowed PRUs
 - List all GitHub Copilot license holders in your enterprise
 - **Exception-based assignment**: Only users in the exception list get PRUs access
-- **Sync cost center assignments back to GitHub Enterprise**
-- Export data to CSV and Excel formats
+- **Plan vs Apply** execution modes (safe planning before changes)
+- Sync cost center assignments back to GitHub Enterprise (apply mode)
+- Export data to CSV, Excel, JSON
 - Comprehensive logging and error handling
-- Support for dry-run testing and automation
+- Non-interactive automation friendly (`--yes` to skip confirmation)
 
 ## Prerequisites
 
@@ -88,33 +89,37 @@ python main.py --show-config
 # List all Copilot license holders (shows PRUs exceptions)
 python main.py --list-users
 
-# Assign cost centers using simplified PRUs model
-python main.py --assign-cost-centers --export csv
+# Plan cost center assignments (no changes made)
+python main.py --assign-cost-centers --mode plan
 
-# Dry run to preview cost center assignments
-python main.py --assign-cost-centers --dry-run
+# Apply cost center assignments (will prompt for confirmation)
+python main.py --assign-cost-centers --mode apply
 ```
 
-### Advanced Usage
+### Additional Examples
 
 ```bash
-# Assign and sync cost centers back to GitHub Enterprise
-python main.py --assign-cost-centers --sync-cost-centers
+# Apply without interactive confirmation (for automation)
+python main.py --assign-cost-centers --mode apply --yes
 
-# Generate summary report
+# Generate summary report (plan mode by default)
 python main.py --assign-cost-centers --summary-report
 
-# Process only specific users
-python main.py --users user1,user2,user3 --assign-cost-centers --dry-run
+# Export users in multiple formats after planning
+python main.py --assign-cost-centers --mode plan --export-users all
 
-# Export to Excel with cost center assignments
-python main.py --assign-cost-centers --export excel
+# Process only specific users (plan)
+python main.py --users user1,user2,user3 --assign-cost-centers --mode plan
+
+# Export to Excel only (apply mode)
+python main.py --assign-cost-centers --mode apply --yes --export-users excel
 ```
 
 ## Output Files
 
-- `exports/copilot_users.csv` - User list with cost center assignments
-- `exports/copilot_users.xlsx` - Detailed Excel report
+- `exports/copilot_users_<timestamp>.csv` - User list with cost center assignments
+- `exports/copilot_users_<timestamp>.xlsx` - Detailed Excel report
+- `exports/copilot_users_<timestamp>.json` - JSON export
 - `exports/cost_center_summary.csv` - Cost center breakdown
 - `logs/` - Application logs
 

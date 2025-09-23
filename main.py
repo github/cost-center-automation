@@ -65,6 +65,13 @@ def parse_arguments():
         default="plan",
         help="Execution mode: plan (no changes) or apply (push assignments to GitHub)"
     )
+
+    parser.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Skip confirmation prompt in apply mode (non-interactive)"
+    )
     
     parser.add_argument(
         "--summary-report",
@@ -204,6 +211,17 @@ def main():
                     for cost_center_id, usernames in desired_groups.items():
                         logger.info(f"Would add {len(usernames)} users to cost center {cost_center_id}")
                 else:  # apply
+                    # Safety confirmation unless --yes provided
+                    if not args.yes:
+                        print("\nYou are about to APPLY cost center assignments to GitHub Enterprise.")
+                        print("This will push assignments for ALL processed users (no diff).")
+                        print("Summary:")
+                        for cc_id, usernames in desired_groups.items():
+                            print(f"  - {cc_id}: {len(usernames)} users")
+                        confirm = input("\nProceed? Type 'apply' to continue: ").strip().lower()
+                        if confirm != "apply":
+                            logger.warning("Aborted by user before applying assignments")
+                            return
                     logger.info("Applying full assignment state to GitHub Enterprise...")
                     cost_center_groups = {cc: users for cc, users in desired_groups.items() if users}
                     if not cost_center_groups:
