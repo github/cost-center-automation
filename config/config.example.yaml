@@ -1,0 +1,36 @@
+# GitHub Configuration
+github:
+  # Your GitHub Personal Access Token (requires appropriate enterprise permissions)
+  token: "your_github_personal_access_token_here"
+  
+  # For GitHub Enterprise Cloud - use enterprise name
+  enterprise: "your_enterprise_name"
+  
+  # For regular GitHub organizations - use organization name (optional if using enterprise)  
+  # organization: "your_organization_name"
+
+# Export Settings
+export:
+  # Directory to save exported files
+  directory: "exports"
+  
+  # Default export formats
+  formats:
+    - "csv"
+    - "excel"
+
+# Logging Configuration
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR
+  level: "INFO"
+  
+  # Log file location
+  file: "logs/copilot_manager.log"
+
+# Cost Center Settings
+cost_centers:
+  # Cost center ID for users without PRUs (default for all users)
+  no_PRUs_costCenter: "CC-001-NO-PRUS"
+  
+  # Cost center ID for users with PRUs allowed (exception users only)
+  PRUs_allowed_costCenter: "CC-002-PRUS-ALLOWED"

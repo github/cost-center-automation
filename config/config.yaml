@@ -1,0 +1,40 @@
+# GitHub Configuration
+github:
+  # IMPORTANT: Do NOT store real tokens in this file. Set GITHUB_TOKEN in your environment instead.
+  # token: "YOUR_TOKEN_HERE"  # (optional fallback, discouraged)
+  
+  # For GitHub Enterprise Cloud - use enterprise name
+  enterprise: "avocado-corp"
+  # For regular GitHub organizations - uncomment and set if not using enterprise
+  # organization: "your_organization_name"
+
+# Cost Center Settings
+cost_centers:
+  # Normalized key names (legacy keys still supported: no_PRUs_costCenter, PRUs_allowed_costCenter, PRUs_exception_users)
+  no_prus_cost_center: "d225bd8f-36ac-4ef1-af62-9962c281003f"
+  prus_allowed_cost_center: "e7706b4e-fd0c-40c3-a8cc-f92559672de0"
+  prus_exception_users:
+    - "gmondello"
+    - "ihcomega56"
+    - "maiix"
+    # Add more usernames here as needed
+    # - "another.user"
+    # - "special.user"
+
+# Export Settings
+export:
+  # Directory to save exported files
+  directory: "exports"
+  
+  # Default export formats
+  formats:
+    - "csv"
+    - "excel"
+
+# Logging Configuration
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR
+  level: "INFO"
+  
+  # Log file location
+  file: "logs/copilot_manager.log"

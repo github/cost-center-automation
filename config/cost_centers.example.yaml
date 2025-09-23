@@ -1,0 +1,15 @@
+# Cost Center Assignment Rules
+# Simple exception-based assignment:
+# - All users go to no_PRUs_costCenter by default
+# - Only users listed below get PRUs_allowed_costCenter
+
+# Users who are allowed PRUs (exception list)
+# These users will be assigned to PRUs_allowed_costCenter
+# All other users will be assigned to no_PRUs_costCenter
+PRUs_exception_users:
+  - "john.doe"
+  - "jane.smith"
+  - "admin.user"
+  # Add more usernames here as needed
+  # - "another.user"
+  # - "special.user"

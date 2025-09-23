@@ -1,0 +1,82 @@
+name: GitHub Copilot Cost Center Update
+
+on:
+  schedule:
+    # Run every Monday at 9:00 AM UTC
+    - cron: '0 9 * * 1'
+  
+  # Allow manual triggering
+  workflow_dispatch:
+
+jobs:
+  update-cost-centers:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+    
+    - name: Create config from secrets
+      run: |
+        mkdir -p config
+        cat > config/config.yaml << EOF
+        github:
+          token: "${{ secrets.GITHUB_TOKEN }}"
+          organization: "${{ secrets.GITHUB_ORG }}"
+        
+        export:
+          directory: "exports"
+          formats:
+            - "csv"
+            - "excel"
+        
+        logging:
+          level: "INFO"
+          file: "logs/copilot_manager.log"
+        
+        cost_centers:
+          default: "General"
+        EOF
+    
+    - name: Copy cost center rules
+      run: |
+        cp config/cost_centers.example.yaml config/cost_centers.yaml
+    
+    - name: Run cost center update
+      run: |
+        python main.py --assign-cost-centers --export both --summary-report --verbose
+    
+    - name: Upload export files
+      uses: actions/upload-artifact@v3
+      with:
+        name: copilot-exports
+        path: exports/
+        retention-days: 30
+    
+    - name: Upload logs
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: logs
+        path: logs/
+        retention-days: 7
+
+    # Optional: Commit results back to repository
+    - name: Commit and push results
+      if: github.event_name == 'workflow_dispatch'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add exports/
+        git commit -m "Update Copilot cost center exports $(date -I)" || exit 0
+        git push
