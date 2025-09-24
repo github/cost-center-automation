@@ -1,0 +1,18 @@
+# GitHub Configuration
+github:
+  # GitHub Enterprise name (required)
+  enterprise: "your_enterprise_name"
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  file: "logs/populate_cost_centers.log"
+
+# Cost Center Settings (IDs optional if auto_create true)
+cost_centers:
+  no_prus_cost_center: "REPLACE_WITH_NO_PRUS_COST_CENTER_ID"
+  prus_allowed_cost_center: "REPLACE_WITH_PRUS_ALLOWED_COST_CENTER_ID"
+  prus_exception_users: []
+  auto_create: true
+  no_pru_name: "00 - No PRU overages"
+  pru_allowed_name: "01 - PRU overages allowed"

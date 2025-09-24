@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  copilot-manager:
+    build: .
+    container_name: copilot-cost-center-manager
+    volumes:
+      - ./config:/app/config:ro
+      - ./exports:/app/exports
+      - ./logs:/app/logs
+      - ./.env:/app/.env:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: python main.py --assign-cost-centers --export both --summary-report
+    
+  # Optional: Scheduled runner using cron-like functionality
+  copilot-scheduler:
+    build: .
+    container_name: copilot-scheduler
+    volumes:
+      - ./config:/app/config:ro
+      - ./exports:/app/exports
+      - ./logs:/app/logs
+      - ./.env:/app/.env:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: >
+      sh -c "
+        while true; do
+          echo 'Running scheduled update at $(date)'
+          python main.py --assign-cost-centers --export both --summary-report
+          echo 'Sleeping for 24 hours...'
+          sleep 86400
+        done
+      "
+    restart: unless-stopped

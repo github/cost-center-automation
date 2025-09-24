@@ -1,0 +1,32 @@
+# GitHub Configuration
+github:
+  # Enterprise name is required. Prefer setting via environment var GITHUB_ENTERPRISE.
+  # Leave as placeholder or blank if supplying via environment.
+  enterprise: "REPLACE_WITH_ENTERPRISE_SLUG"
+
+# Cost Center Settings
+cost_centers:
+  ## update with the ID of the cost center for users who should NOT receive PRUs
+  no_prus_cost_center: "REPLACE_WITH_NO_PRUS_COST_CENTER_ID"    
+
+  ## update with the ID of the cost center for users who should receive PRUs
+  prus_allowed_cost_center: "REPLACE_WITH_PRUS_ALLOWED_COST_CENTER_ID" 
+
+  # List of users to that should be added to cost center to receive PRUs 
+  prus_exception_users:
+    # Add usernames and uncomment the lines below
+    # - "example.user1"  
+    # - "example.user2"
+
+  # Auto-creation settings (creates cost centers if they don't exist)
+  auto_create: true  # Auto-create required cost centers if IDs are placeholders
+  no_pru_name: "00 - No PRU overages"  # Name for no-PRU cost center if auto-created
+  pru_allowed_name: "01 - PRU overages allowed"  # Name for PRU-allowed cost center if auto-created
+
+# Logging Configuration
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR
+  level: "INFO"
+  
+  # Log file location
+  file: "logs/populate_cost_centers.log"
