@@ -2,11 +2,11 @@
 
 This utility allows for and auto-assignment of all Copilot licensed users in a given enterprise to a cost center.
 
-## 🚀 Quick Start (5 Minutes)
+## 🚀 Quick start guide
 
 **Want to get started immediately? Here's the fastest path:**
 
-### Option A: GitHub Actions (Recommended - Zero Setup)
+### Option A: GitHub Actions (Recommended)
 
 1. **Fork this repository** to your GitHub Enterprise organization
 2. **Add your GitHub token as repository secret**:
