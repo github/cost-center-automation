@@ -2,6 +2,49 @@
 
 This utility allows for and auto-assignment of all Copilot licensed users in a given enterprise to a cost center.
 
+## 🚀 Quick Start (5 Minutes)
+
+**Want to get started immediately? Here's the fastest path:**
+
+### Option A: GitHub Actions (Recommended - Zero Setup)
+
+1. **Fork this repository** to your GitHub Enterprise organization
+2. **Add your GitHub token as repository secret**:
+   - Go to repository Settings → Secrets and variables → Actions
+   - Add secret: `COPILOT_GITHUB_TOKEN` (your GitHub Personal Access Token with `manage_billing:enterprise` scope)
+3. **Run the workflow**:
+   - Go to Actions tab → "GitHub Copilot Cost Center Automation" 
+   - Click "Run workflow" → Select "incremental" mode → Run
+4. **Done!** The workflow automatically:
+   - Detects your enterprise
+   - Creates cost centers if needed ("00 - No PRU overages", "01 - PRU overages allowed")
+   - Assigns all Copilot users to appropriate cost centers
+   - Runs every 6 hours automatically
+
+### Option B: Local Execution
+
+1. **Clone and setup**:
+   ```bash
+   git clone <this-repo>
+   cd populate_cost_centers
+   pip install -r requirements.txt
+   ```
+
+2. **Configure**:
+   ```bash
+   cp config/config.example.yaml config/config.yaml
+   echo "GITHUB_TOKEN=your_github_token_here" > .env
+   # Edit config/config.yaml - set your enterprise name (or leave auto-detection)
+   ```
+
+3. **Run**:
+   ```bash
+   # Create cost centers and assign users (with confirmation)
+   python main.py --create-cost-centers --assign-cost-centers --mode apply
+   ```
+
+**That's it!** Your Copilot users are now organized in cost centers for better billing tracking.
+
 ## Overview
 
 Automates GitHub Copilot license cost center assignments for enterprises using a simple two-tier model:
