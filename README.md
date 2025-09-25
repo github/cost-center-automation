@@ -383,8 +383,6 @@ The template sync workflow is **automatically configured** and ready to use!
 
 **That's it!** The workflow will automatically sync from `github/cost-center-automation` every Monday.
 
-> **Note**: If your organization is within GitHub's enterprise and has special access policies, you might be able to skip the token setup and rely on the default `GITHUB_TOKEN`.
-
 ### What gets updated
 
 ✅ **Always synced:**
