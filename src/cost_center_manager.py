@@ -13,8 +13,8 @@ class CostCenterManager:
         """Initialize the cost center manager."""
         self.config = config
         self.logger = logging.getLogger(__name__)
-        self.cost_center_no_prus = config.no_prus_cost_center
-        self.cost_center_prus_allowed = config.prus_allowed_cost_center
+        self.cost_center_no_prus = config.no_prus_cost_center_id
+        self.cost_center_prus_allowed = config.prus_allowed_cost_center_id
         self.prus_exception_users = set(config.prus_exception_users)
         self.current_assignments = {}
         
@@ -38,8 +38,8 @@ class CostCenterManager:
         Assign a cost center to a user based on simplified PRUs logic.
         
         Rules:
-        - If username is in PRUs exception list → prus_allowed_cost_center
-        - Otherwise → no_prus_cost_center
+        - If username is in PRUs exception list → prus_allowed_cost_center_id
+        - Otherwise → no_prus_cost_center_id
         """
         username = user.get("login", "")
         
@@ -88,14 +88,14 @@ class CostCenterManager:
         
         # Check if cost center IDs are defined
         if not self.cost_center_no_prus:
-            issues.append("no_prus_cost_center is not defined")
+            issues.append("no_prus_cost_center_id is not defined")
         
         if not self.cost_center_prus_allowed:
-            issues.append("prus_allowed_cost_center is not defined")
+            issues.append("prus_allowed_cost_center_id is not defined")
         
         # Check if cost center IDs are the same (would be confusing)
         if self.cost_center_no_prus == self.cost_center_prus_allowed:
-            issues.append("no_prus_cost_center and prus_allowed_cost_center cannot be the same")
+            issues.append("no_prus_cost_center_id and prus_allowed_cost_center_id cannot be the same")
         
         # Validate exception users list
         if not isinstance(self.prus_exception_users, (list, set)):

@@ -7,10 +7,10 @@ github:
 # Cost Center Settings
 cost_centers:
   ## update with the ID of the cost center for users who should NOT receive PRUs
-  no_prus_cost_center: "REPLACE_WITH_NO_PRUS_COST_CENTER_ID"    
+  no_prus_cost_center_id: "REPLACE_WITH_NO_PRUS_COST_CENTER_ID"    
 
   ## update with the ID of the cost center for users who should receive PRUs
-  prus_allowed_cost_center: "REPLACE_WITH_PRUS_ALLOWED_COST_CENTER_ID" 
+  prus_allowed_cost_center_id: "REPLACE_WITH_PRUS_ALLOWED_COST_CENTER_ID" 
 
   # List of users to that should be added to cost center to receive PRUs 
   prus_exception_users:
@@ -20,8 +20,8 @@ cost_centers:
 
   # Auto-creation settings (creates cost centers if they don't exist)
   auto_create: true  # Auto-create required cost centers if IDs are placeholders
-  no_pru_name: "00 - No PRU overages"  # Name for no-PRU cost center if auto-created
-  pru_allowed_name: "01 - PRU overages allowed"  # Name for PRU-allowed cost center if auto-created
+  no_prus_cost_center_name: "00 - No PRU overages"  # Name for no-PRU cost center if auto-created
+  prus_allowed_cost_center_name: "01 - PRU overages allowed"  # Name for PRU-allowed cost center if auto-created
 
 # Logging Configuration
 logging:

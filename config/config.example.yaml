@@ -8,11 +8,20 @@ logging:
   level: "INFO"
   file: "logs/populate_cost_centers.log"
 
-# Cost Center Settings (IDs optional if auto_create true)
+# Cost Center Configuration
 cost_centers:
-  no_prus_cost_center: "REPLACE_WITH_NO_PRUS_COST_CENTER_ID"
-  prus_allowed_cost_center: "REPLACE_WITH_PRUS_ALLOWED_COST_CENTER_ID"
+  # Manual cost center IDs (only needed when auto_create is false)
+  no_prus_cost_center_id: "REPLACE_WITH_NO_PRUS_COST_CENTER_ID"
+  prus_allowed_cost_center_id: "REPLACE_WITH_PRUS_ALLOWED_COST_CENTER_ID"
+  
+  # Users who should get access to PRU overages (always required)
   prus_exception_users: []
-  auto_create: true
-  no_pru_name: "00 - No PRU overages"
-  pru_allowed_name: "01 - PRU overages allowed"
+    # - "alice"
+    # - "bob"
+  
+  # Auto-creation settings (creates cost centers if they don't exist)
+  auto_create: true  # Set to false to use existing cost center IDs above
+  
+  # Cost center names (only used when auto_create is true)
+  no_prus_cost_center_name: "00 - No PRU overages"  # Name for no-PRU cost center
+  prus_allowed_cost_center_name: "01 - PRU overages allowed"  # Name for PRU-allowed cost center

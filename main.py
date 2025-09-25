@@ -3,8 +3,8 @@
 Simplified GitHub Copilot Cost Center Management Script
 
 This script manages GitHub Copilot license holders with a simple two-cost-center model:
-- no_prus_cost_center: Default for all users
-- prus_allowed_cost_center: Only for exception users listed in config
+- no_prus_cost_center_id: Default for all users
+- prus_allowed_cost_center_id: Only for exception users listed in config
 """
 
 import argparse
@@ -129,15 +129,15 @@ def _show_success_summary(config: ConfigManager, args, users: Optional[List[Dict
         print(f"\n📊 COST CENTERS ({config.github_enterprise}):")
         
         # No PRUs cost center
-        if not config.no_prus_cost_center.startswith("REPLACE_WITH_"):
-            no_pru_url = f"https://github.com/enterprises/{config.github_enterprise}/billing/cost_centers/{config.no_prus_cost_center}"
-            print(f"  🔵 No PRU Overages: {config.no_prus_cost_center}")
+        if not config.no_prus_cost_center_id.startswith("REPLACE_WITH_"):
+            no_pru_url = f"https://github.com/enterprises/{config.github_enterprise}/billing/cost_centers/{config.no_prus_cost_center_id}"
+            print(f"  🔵 No PRU Overages: {config.no_prus_cost_center_id}")
             print(f"     → {no_pru_url}")
         
         # PRUs allowed cost center  
-        if not config.prus_allowed_cost_center.startswith("REPLACE_WITH_"):
-            pru_url = f"https://github.com/enterprises/{config.github_enterprise}/billing/cost_centers/{config.prus_allowed_cost_center}"
-            print(f"  🟡 PRU Overages Allowed: {config.prus_allowed_cost_center}")
+        if not config.prus_allowed_cost_center_id.startswith("REPLACE_WITH_"):
+            pru_url = f"https://github.com/enterprises/{config.github_enterprise}/billing/cost_centers/{config.prus_allowed_cost_center_id}"
+            print(f"  🟡 PRU Overages Allowed: {config.prus_allowed_cost_center_id}")
             print(f"     → {pru_url}")
     
     # Show user statistics if users were processed
@@ -164,8 +164,8 @@ def _show_success_summary(config: ConfigManager, args, users: Optional[List[Dict
                 print(f"  ❌ Failed assignments: {failed} users")
         elif args.assign_cost_centers:
             # Count by cost center if assignments were planned
-            no_pru_count = len([u for u in users if u.get('cost_center') == config.no_prus_cost_center])
-            pru_count = len([u for u in users if u.get('cost_center') == config.prus_allowed_cost_center])
+            no_pru_count = len([u for u in users if u.get('cost_center') == config.no_prus_cost_center_id])
+            pru_count = len([u for u in users if u.get('cost_center') == config.prus_allowed_cost_center_id])
             print(f"  🔵 No PRU users: {no_pru_count}")
             print(f"  🟡 PRU exception users: {pru_count}")
     
@@ -211,18 +211,20 @@ def main():
             print(f"PRUs Allowed Cost Center: New cost center \"{config.pru_allowed_cost_center_name}\" to be created")
         else:
             # Display normal cost center info with URLs (only if not placeholders)
-            print(f"No PRUs Cost Center: {config.no_prus_cost_center}")
+            print(f"No PRUs Cost Center: {config.no_prus_cost_center_id}")
+            
             if (config.github_enterprise and 
                 not config.github_enterprise.startswith("REPLACE_WITH_") and
-                not config.no_prus_cost_center.startswith("REPLACE_WITH_")):
-                no_prus_url = f"https://github.com/enterprises/{config.github_enterprise}/billing/cost_centers/{config.no_prus_cost_center}"
+                not config.no_prus_cost_center_id.startswith("REPLACE_WITH_")):
+                no_prus_url = f"https://github.com/enterprises/{config.github_enterprise}/billing/cost_centers/{config.no_prus_cost_center_id}"
                 print(f"  → {no_prus_url}")
             
-            print(f"PRUs Allowed Cost Center: {config.prus_allowed_cost_center}")
+            print(f"PRUs Allowed Cost Center: {config.prus_allowed_cost_center_id}")
+            
             if (config.github_enterprise and 
                 not config.github_enterprise.startswith("REPLACE_WITH_") and
-                not config.prus_allowed_cost_center.startswith("REPLACE_WITH_")):
-                prus_allowed_url = f"https://github.com/enterprises/{config.github_enterprise}/billing/cost_centers/{config.prus_allowed_cost_center}"
+                not config.prus_allowed_cost_center_id.startswith("REPLACE_WITH_")):
+                prus_allowed_url = f"https://github.com/enterprises/{config.github_enterprise}/billing/cost_centers/{config.prus_allowed_cost_center_id}"
                 print(f"  → {prus_allowed_url}")
         
         print(f"PRUs Exception Users ({len(config.prus_exception_users)}):")
@@ -275,8 +277,8 @@ def main():
                 
                 if cost_center_ids:
                     # Update the cost center IDs in the config and manager
-                    config.no_prus_cost_center = cost_center_ids['no_pru_id']
-                    config.prus_allowed_cost_center = cost_center_ids['pru_allowed_id']
+                    config.no_prus_cost_center_id = cost_center_ids['no_pru_id']
+                    config.prus_allowed_cost_center_id = cost_center_ids['pru_allowed_id']
                     
                     # Update the cost center manager with new IDs
                     cost_center_manager.cost_center_no_prus = cost_center_ids['no_pru_id']

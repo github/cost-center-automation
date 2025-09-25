@@ -404,14 +404,14 @@ class GitHubCopilotManager:
             self.logger.error(f"Error finding cost center '{name}': {str(e)}")
             return None
     
-    def ensure_cost_centers_exist(self, no_pru_name: str = "00 - No PRU overages", 
-                                 pru_allowed_name: str = "01 - PRU overages allowed") -> Optional[Dict[str, str]]:
+    def ensure_cost_centers_exist(self, no_pru_cost_center_name: str = "00 - No PRU overages", 
+                                 pru_allowed_cost_center_name: str = "01 - PRU overages allowed") -> Optional[Dict[str, str]]:
         """
         Ensure the required cost centers exist, creating them if necessary.
         
         Args:
-            no_pru_name: Name for the no-PRU cost center
-            pru_allowed_name: Name for the PRU-allowed cost center
+            no_pru_cost_center_name: Name for the no-PRU cost center
+            pru_allowed_cost_center_name: Name for the PRU-allowed cost center
             
         Returns:
             Dict with 'no_pru_id' and 'pru_allowed_id' if successful, None if failed
@@ -421,16 +421,16 @@ class GitHubCopilotManager:
             return None
         
         # Try to create the cost centers (will handle 409 conflicts gracefully)
-        self.logger.info(f"Ensuring cost center exists: {no_pru_name}")
-        no_pru_id = self.create_cost_center(no_pru_name)
+        self.logger.info(f"Ensuring cost center exists: {no_pru_cost_center_name}")
+        no_pru_id = self.create_cost_center(no_pru_cost_center_name)
         if not no_pru_id:
-            self.logger.error(f"Failed to ensure cost center exists: {no_pru_name}")
+            self.logger.error(f"Failed to ensure cost center exists: {no_pru_cost_center_name}")
             return None
         
-        self.logger.info(f"Ensuring cost center exists: {pru_allowed_name}")
-        pru_allowed_id = self.create_cost_center(pru_allowed_name)
+        self.logger.info(f"Ensuring cost center exists: {pru_allowed_cost_center_name}")
+        pru_allowed_id = self.create_cost_center(pru_allowed_cost_center_name)
         if not pru_allowed_id:
-            self.logger.error(f"Failed to ensure cost center exists: {pru_allowed_name}")
+            self.logger.error(f"Failed to ensure cost center exists: {pru_allowed_cost_center_name}")
             return None
         
         result = {
