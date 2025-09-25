@@ -6,13 +6,18 @@ This utility allows for auto-assignment of all Copilot-licensed users in a given
 
 ### Option A: GitHub Actions (Recommended)
 
-1. **Fork this repository** to your GitHub Enterprise organization
-2. **Add your GitHub token as repository secret**:
-   - Go to repository Settings → Secrets and variables → Actions
+1. **Create a new repository from this template** in your GitHub Enterprise organization:
+   - Click the green "Use this template" button at the top of this repository.
+   - Fill in the repository details and create your own copy.
+
+2. **Add your GitHub token as a repository secret**:
+   - Go to your new repository’s **Settings** → **Secrets and variables** → **Actions**
    - Add secret: `COPILOT_GITHUB_TOKEN` (your GitHub Personal Access Token with `manage_billing:enterprise` scope)
+
 3. **Run the workflow**:
-   - Go to Actions tab → "GitHub Copilot Cost Center Automation" 
+   - Go to the **Actions** tab → "GitHub Copilot Cost Center Automation"
    - Click "Run workflow" → Select "incremental" mode → Run
+
 4. **Done!** The workflow automatically:
    - Detects your enterprise
    - Creates cost centers if needed ("00 - No PRU overages", "01 - PRU overages allowed")
@@ -23,7 +28,7 @@ This utility allows for auto-assignment of all Copilot-licensed users in a given
 
 1. **Clone and setup**:
    ```bash
-   git clone <this-repo>
+   git clone <your-repo-url>
    cd populate_cost_centers
    pip install -r requirements.txt
    ```
@@ -69,7 +74,7 @@ Supports both interactive execution and automated scheduling with incremental pr
 
 ## Installation
 
-1. Clone or download this repository
+1. Clone or download your repository created from this template
 2. Install required dependencies:
    ```bash
    pip install -r requirements.txt
@@ -358,7 +363,7 @@ Logs: inspect `logs/populate_cost_centers.log` for detailed traces (DEBUG if `--
 
 ## Contributing
 
-1. Fork & branch (`feat/<name>`)
+1. Create your own repository from the template & branch (`feat/<name>`)
 2. Add/adjust tests (future enhancement: test harness TBD)
 3. Keep changeset focused & documented in commit message
 4. Submit PR with before/after summary
