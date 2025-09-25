@@ -1,0 +1,124 @@
+name: Sync from template
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout consumer repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Add template remote and fetch
+        run: |
+          TEMPLATE_REPO="github/cost-center-automation"
+          git remote add template https://github.com/${TEMPLATE_REPO}.git
+          git fetch template --tags --prune
+
+      - name: Check for template updates
+        id: check-updates
+        run: |
+          TEMPLATE_REPO="github/cost-center-automation"
+          
+          TEMPLATE_BRANCH=main
+          CURRENT_VERSION=""
+          TEMPLATE_VERSION=""
+          
+          # Get current version if it exists
+          if [ -f VERSION ]; then
+            CURRENT_VERSION=$(cat VERSION)
+          fi
+          
+          # Get template version
+          git show template/$TEMPLATE_BRANCH:VERSION > /tmp/template_version 2>/dev/null || echo "1.0.0" > /tmp/template_version
+          TEMPLATE_VERSION=$(cat /tmp/template_version)
+          
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "template_version=$TEMPLATE_VERSION" >> $GITHUB_OUTPUT
+          
+          # Check if there are any differences
+          git diff --quiet HEAD template/$TEMPLATE_BRANCH
+          if [ $? -eq 0 ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "No changes from template."
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "Changes detected from template."
+          fi
+
+      - name: Merge template default branch into working branch
+        if: steps.check-updates.outputs.skip != 'true'
+        run: |
+          TEMPLATE_BRANCH=main
+          git checkout -B template-sync
+          git merge --no-commit --no-ff template/$TEMPLATE_BRANCH || true
+          
+          # Exclude files consumers own (restore from .syncignore if it exists)
+          if [ -f .syncignore ]; then
+            echo "Restoring consumer-owned files based on .syncignore..."
+            while IFS= read -r pattern; do
+              # Skip empty lines and comments
+              [[ -z "$pattern" || "$pattern" =~ ^#.*$ ]] && continue
+              echo "Restoring: $pattern"
+              git restore --source=HEAD -- "$pattern" 2>/dev/null || true
+            done < .syncignore
+          else
+            # Default exclusions
+            git restore --source=HEAD -- .github/renovate.json 2>/dev/null || true
+            git restore --source=HEAD -- config/config.yaml 2>/dev/null || true
+          fi
+          
+          # Check if there are still changes after exclusions
+          if git diff --quiet; then
+            echo "No changes from template after exclusions."
+            exit 0
+          fi
+          
+          # Commit the changes
+          COMMIT_MSG="chore: sync from template ($TEMPLATE_BRANCH)"
+          if [ -n "${{ steps.check-updates.outputs.current_version }}" ] && [ -n "${{ steps.check-updates.outputs.template_version }}" ]; then
+            COMMIT_MSG="chore: sync from template v${{ steps.check-updates.outputs.current_version }} → v${{ steps.check-updates.outputs.template_version }}"
+          fi
+          git commit -m "$COMMIT_MSG"
+
+      - name: Open PR
+        if: steps.check-updates.outputs.skip != 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.TEMPLATE_SYNC_TOKEN || github.token }}
+          branch: template-sync
+          title: "Sync from template"
+          body: |
+            This PR pulls latest changes from the template repository.
+            
+            **Version Update:** ${{ steps.check-updates.outputs.current_version || 'unknown' }} → ${{ steps.check-updates.outputs.template_version }}
+            
+            **What's included:**
+            - Latest workflow improvements
+            - Documentation updates
+            - Bug fixes and enhancements
+            
+            **Review Guidelines:**
+            - Review conflicts carefully
+            - Files excluded by policy were restored to the consumer version
+            - Check that your custom configurations are preserved
+            
+            **Files that are never overwritten:**
+            - `config/config.yaml` (your custom configuration)
+            - `.github/renovate.json` (if you have custom Renovate config)
+            - Any files listed in `.syncignore`
+            
+            🤖 This PR was created automatically by the template sync workflow.
+          commit-message: "chore: sync from template"
+          labels: template-sync, chore, automated
+          draft: false
+          delete-branch: true

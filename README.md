@@ -1,13 +1,13 @@
-# GitHub cost center manager
+# GitHub cost center automation
 
-This utility allows for auto-assignment of all Copilot-licensed users in a given enterprise to a cost center.
+This template repository provides scaffolding for cost center automation. In its initial version, the utility allows for auto-assignment of all Copilot-licensed users in a given enterprise to a cost center. Additional automation use cases will be added.
 
 ## 🚀 Quick start guide
 
 ### Option A: GitHub Actions (Recommended)
 
 1. **Create a new repository from this template** in your GitHub Enterprise organization:
-   - Click the green "Use this template" button at the top of this repository.
+   - Click the green `Use this template` button at the top of this repository.
    - Fill in the repository details and create your own copy.
 
 2. **Add your GitHub token as a repository secret**:
@@ -67,10 +67,11 @@ Supports both interactive execution and automated scheduling with incremental pr
 
 ## Prerequisites
 
-- Python 3.8 or higher
 - GitHub Enterprise Cloud admin access
-- GitHub Personal Access Token with appropriate permissions:
-  - For **Enterprise**: Enterprise admin permissions or `manage_billing:enterprise` scope
+- GitHub Personal Access Token with `manage_billing:enterprise` scope
+
+**Additional requirements for local execution:**
+- Python 3.8 or higher
 
 ## Installation
 
@@ -102,21 +103,25 @@ All configuration lives in: `config/config.yaml` (example below)
 ### Core Keys
 ```yaml
 github:
-  # Provide either slug 
-  enterprise: "your_enterprise_name"    
-  # token: "YOUR_TOKEN_HERE"   # Prefer setting GITHUB_TOKEN env var instead
+  # GitHub Enterprise name (required)
+  enterprise: "your_enterprise_name"
 
 cost_centers:
-  no_prus_cost_center: "REPLACE_WITH_NO_PRUS_COST_CENTER_ID"
-  prus_allowed_cost_center: "REPLACE_WITH_PRUS_ALLOWED_COST_CENTER_ID"
+  # Manual cost center IDs (only needed when auto_create is false)
+  no_prus_cost_center_id: "REPLACE_WITH_NO_PRUS_COST_CENTER_ID"
+  prus_allowed_cost_center_id: "REPLACE_WITH_PRUS_ALLOWED_COST_CENTER_ID"
+  
+  # Users who should get access to PRU overages (always required)
   prus_exception_users:
     # - "alice"
     # - "bob"
   
   # Auto-creation settings (creates cost centers if they don't exist)
   auto_create: false  # Set to true to enable auto-creation
-  no_pru_name: "00 - No PRU overages"  # Name for no-PRU cost center
-  pru_allowed_name: "01 - PRU overages allowed"  # Name for PRU-allowed cost center
+  
+  # Cost center names (only used when auto_create is true)
+  no_prus_cost_center_name: "00 - No PRU overages"  # Name for no-PRU cost center
+  prus_allowed_cost_center_name: "01 - PRU overages allowed"  # Name for PRU-allowed cost center
 
 logging:
   level: "INFO"
@@ -127,8 +132,8 @@ logging:
 If either cost center ID still equals `REPLACE_WITH_*` (or the sample defaults) a WARNING is logged. In plan mode this is informational; in apply mode you should fix values before proceeding.
 
 ### User Assignment Logic
-- Default: everyone → `no_prus_cost_center`
-- If username in `prus_exception_users` → `prus_allowed_cost_center`
+- Default: everyone → `no_prus_cost_center_id`
+- If username in `prus_exception_users` → `prus_allowed_cost_center_id`
 
 ### Environment Variables (override config)
 - `GITHUB_TOKEN`
@@ -164,8 +169,8 @@ python main.py --create-cost-centers --assign-cost-centers --mode apply --yes
 ```yaml
 cost_centers:
   auto_create: true  # Enable automatic creation
-  no_pru_name: "Custom No PRU Name"  # Optional: customize names
-  pru_allowed_name: "Custom PRU Name"
+  no_prus_cost_center_name: "Custom No PRU Name"  # Optional: customize names
+  prus_allowed_cost_center_name: "Custom PRU Name"
 ```
 
 **Or use command line flag:** `--create-cost-centers`
@@ -348,6 +353,70 @@ tail -f logs/populate_cost_centers.log
 0 * * * * cd /path/to/populate_cost_centers && ./automation/update_cost_centers.sh >/dev/null 2>&1  # Hourly incremental
 0 2 * * 0 cd /path/to/populate_cost_centers && ./automation/update_cost_centers.sh full >/dev/null 2>&1  # Weekly full
 ```
+
+## Keeping up-to-date
+
+This template includes a built-in **template sync workflow** that automatically keeps your repository updated with the latest improvements and fixes from the upstream template.
+
+### How it works
+
+1. **Automatic Updates**: Every Monday at 06:00 UTC, the workflow checks for template updates
+2. **Smart Merging**: Only pulls changes that don't conflict with your customizations  
+3. **Protected Files**: Your configuration and custom files are never overwritten
+4. **Pull Request**: Creates a PR with changes for your review before applying
+
+### Setup (One-time)
+
+The template sync workflow is **automatically configured** and ready to use!
+
+**Required setup** (for most users):
+1. **Create a GitHub Personal Access Token**:
+   - Go to GitHub Settings → Developer settings → Personal access tokens → Fine-grained tokens
+   - Create token with these permissions:
+     - **Repository access**: Your consumer repository
+     - **Permissions**: `Contents: Write`, `Pull requests: Write`
+     - **Public repositories**: `Contents: Read` (to read the template)
+
+2. **Add the token as a repository secret**:
+   - Go to your repository's **Settings** → **Secrets and variables** → **Actions**
+   - Add secret: `TEMPLATE_SYNC_TOKEN` = your PAT
+
+**That's it!** The workflow will automatically sync from `github/cost-center-automation` every Monday.
+
+> **Note**: If your organization is within GitHub's enterprise and has special access policies, you might be able to skip the token setup and rely on the default `GITHUB_TOKEN`.
+
+### What gets updated
+
+✅ **Always synced:**
+- Workflow improvements (`/.github/workflows/`)
+- Bug fixes and new features in source code
+- Documentation updates
+- Dependency updates
+
+🔒 **Never overwritten:**
+- `config/config.yaml` (your settings)
+- `.github/renovate.json` (custom Renovate config)
+- Any files listed in `.syncignore`
+
+### Manual sync
+
+Trigger an immediate sync check:
+- Go to **Actions** → "Sync from template" → "Run workflow"
+
+### Customize sync behavior
+
+Edit `.syncignore` to protect additional files from being overwritten:
+
+```bash
+# Add patterns for files you want to keep unchanged
+echo "my-custom-script.sh" >> .syncignore
+```
+
+### Disable auto-sync
+
+If you prefer manual updates only:
+- Delete `.github/workflows/template-sync.yml`
+- Or edit the workflow and remove the `schedule:` trigger
 
 ## Troubleshooting
 

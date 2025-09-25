@@ -75,12 +75,14 @@ class ConfigManager:
             
             # Cost center configuration
             cost_center_config = config_data.get("cost_centers", {})
-            self.no_prus_cost_center = (
-                cost_center_config.get("no_prus_cost_center") or
+            self.no_prus_cost_center_id = (
+                cost_center_config.get("no_prus_cost_center_id") or
+                cost_center_config.get("no_prus_cost_center") or  # Backward compatibility
                 "CC-001-NO-PRUS"
             )
-            self.prus_allowed_cost_center = (
-                cost_center_config.get("prus_allowed_cost_center") or
+            self.prus_allowed_cost_center_id = (
+                cost_center_config.get("prus_allowed_cost_center_id") or
+                cost_center_config.get("prus_allowed_cost_center") or  # Backward compatibility
                 "CC-002-PRUS-ALLOWED"
             )
             self.prus_exception_users = (
@@ -90,8 +92,16 @@ class ConfigManager:
             
             # Auto-creation configuration
             self.auto_create_cost_centers = cost_center_config.get("auto_create", False)
-            self.no_pru_cost_center_name = cost_center_config.get("no_pru_name", "00 - No PRU overages")
-            self.pru_allowed_cost_center_name = cost_center_config.get("pru_allowed_name", "01 - PRU overages allowed")
+            self.no_pru_cost_center_name = (
+                cost_center_config.get("no_prus_cost_center_name") or
+                cost_center_config.get("no_pru_name") or  # Backward compatibility
+                "00 - No PRU overages"
+            )
+            self.pru_allowed_cost_center_name = (
+                cost_center_config.get("prus_allowed_cost_center_name") or
+                cost_center_config.get("pru_allowed_name") or  # Backward compatibility
+                "01 - PRU overages allowed"
+            )
             
             # Incremental processing configuration
             self.enable_incremental = cost_center_config.get("enable_incremental", False)
@@ -113,8 +123,8 @@ class ConfigManager:
             return
             
         placeholder_tokens = {
-            "no_prus_cost_center": ["REPLACE_WITH_NO_PRUS_COST_CENTER_ID", "CC-001-NO-PRUS"],
-            "prus_allowed_cost_center": ["REPLACE_WITH_PRUS_ALLOWED_COST_CENTER_ID", "CC-002-PRUS-ALLOWED"],
+            "no_prus_cost_center_id": ["REPLACE_WITH_NO_PRUS_COST_CENTER_ID", "CC-001-NO-PRUS"],
+            "prus_allowed_cost_center_id": ["REPLACE_WITH_PRUS_ALLOWED_COST_CENTER_ID", "CC-002-PRUS-ALLOWED"],
         }
         for attr, placeholders in placeholder_tokens.items():
             value = getattr(self, attr, None)
@@ -126,7 +136,7 @@ class ConfigManager:
         # Warn if exception users list is empty (only informational)
         if not self.prus_exception_users:
             self.logger.info(
-                "No PRUs exception users configured. All users will be assigned to the default 'no_prus_cost_center'."
+                "No PRUs exception users configured. All users will be assigned to the default 'no_prus_cost_center_id'."
             )
     
     def load_cost_center_config(self) -> Dict[str, Any]:
@@ -205,8 +215,8 @@ class ConfigManager:
                     "file": "logs/copilot_manager.log"
                 },
                 "cost_centers": {
-                    "no_prus_cost_center": "CC-001-NO-PRUS",
-                    "prus_allowed_cost_center": "CC-002-PRUS-ALLOWED"
+                    "no_prus_cost_center_id": "CC-001-NO-PRUS",
+                    "prus_allowed_cost_center_id": "CC-002-PRUS-ALLOWED"
                 }
             }
             
@@ -289,8 +299,8 @@ class ConfigManager:
         no_prus_url = None
         prus_allowed_url = None
         if self.github_enterprise:
-            no_prus_url = f"https://github.com/enterprises/{self.github_enterprise}/billing/cost_centers/{self.no_prus_cost_center}"
-            prus_allowed_url = f"https://github.com/enterprises/{self.github_enterprise}/billing/cost_centers/{self.prus_allowed_cost_center}"
+            no_prus_url = f"https://github.com/enterprises/{self.github_enterprise}/billing/cost_centers/{self.no_prus_cost_center_id}"
+            prus_allowed_url = f"https://github.com/enterprises/{self.github_enterprise}/billing/cost_centers/{self.prus_allowed_cost_center_id}"
         
         return {
             "github_enterprise": self.github_enterprise,
@@ -299,9 +309,9 @@ class ConfigManager:
             "export_formats": self.export_formats,
             "log_level": self.log_level,
             "log_file": self.log_file,
-            "no_prus_cost_center": self.no_prus_cost_center,
+            "no_prus_cost_center_id": self.no_prus_cost_center_id,
             "no_prus_cost_center_url": no_prus_url,
-            "prus_allowed_cost_center": self.prus_allowed_cost_center,
+            "prus_allowed_cost_center_id": self.prus_allowed_cost_center_id,
             "prus_allowed_cost_center_url": prus_allowed_url,
             "prus_exception_users_count": len(self.prus_exception_users)
         }
