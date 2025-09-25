@@ -1,10 +1,8 @@
 # GitHub cost center manager
 
-This utility allows for and auto-assignment of all Copilot licensed users in a given enterprise to a cost center.
+This utility allows for auto-assignment of all Copilot-licensed users in a given enterprise to a cost center.
 
 ## 🚀 Quick start guide
-
-**Want to get started immediately? Here's the fastest path:**
 
 ### Option A: GitHub Actions (Recommended)
 
