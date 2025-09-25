@@ -46,7 +46,7 @@ This template repository provides scaffolding for cost center automation. In its
    python main.py --create-cost-centers --assign-cost-centers --mode apply
    ```
 
-**That's it!** Your Copilot users are now organized in cost centers for better billing tracking.
+That's it! Your Copilot users are now organized in cost centers for better billing tracking.
 
 ## Overview
 
