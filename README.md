@@ -1,6 +1,6 @@
 # GitHub cost center automation
 
-This template repository provides scaffolding for cost center automation. In its initial version, the utility allows for auto-assignment of all Copilot-licensed users in a given enterprise to a cost center. Additional automation use cases will be added.
+This template repository provides scaffolding for cost center automation. In its initial version, the utility allows for auto-assignment of all Copilot-licensed users in a given enterprise to a cost center.
 
 ## 🚀 Quick start guide
 
