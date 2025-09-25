@@ -1,4 +1,4 @@
-name: GitHub Copilot Cost Center Automation
+name: Cost center automation
 
 on:
   schedule:
@@ -61,7 +61,7 @@ jobs:
     - name: Run incremental cost center update
       if: github.event.inputs.mode != 'full'
       env:
-        GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.COST_CENTER_AUTOMATION_TOKEN }}
       run: |
         echo "Using enterprise: $GITHUB_ENTERPRISE"
         echo "=== Debugging incremental processing ==="
@@ -76,7 +76,7 @@ jobs:
     - name: Run full cost center update  
       if: github.event.inputs.mode == 'full'
       env:
-        GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.COST_CENTER_AUTOMATION_TOKEN }}
       run: |
         echo "Using enterprise: $GITHUB_ENTERPRISE"
         python main.py --create-cost-centers --assign-cost-centers --mode apply --yes --summary-report --verbose

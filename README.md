@@ -11,11 +11,11 @@ This utility allows for auto-assignment of all Copilot-licensed users in a given
    - Fill in the repository details and create your own copy.
 
 2. **Add your GitHub token as a repository secret**:
-   - Go to your new repository’s **Settings** → **Secrets and variables** → **Actions**
-   - Add secret: `COPILOT_GITHUB_TOKEN` (your GitHub Personal Access Token with `manage_billing:enterprise` scope)
+   - Go to your new repository's **Settings** → **Secrets and variables** → **Actions**
+   - Add secret: `COST_CENTER_AUTOMATION_TOKEN` (your GitHub Personal Access Token with `manage_billing:enterprise` scope)
 
 3. **Run the workflow**:
-   - Go to the **Actions** tab → "GitHub Copilot Cost Center Automation"
+   - Go to the **Actions** tab → "Cost center automation"
    - Click "Run workflow" → Select "incremental" mode → Run
 
 4. **Done!** The workflow automatically:
