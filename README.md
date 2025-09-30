@@ -438,7 +438,7 @@ Logs: inspect `logs/populate_cost_centers.log` for detailed traces (DEBUG if `--
 
 ## License
 
-MIT License — see LICENSE for details.
+This project is licensed under the terms of the MIT open source license. Please refer to the [LICENSE](LICENSE) file for the full terms.
 
 ---
 Maintained state: Tags `v0.1.0` (baseline refactor), `v0.1.1` (apply confirmation & flags). Latest: Enhanced result logging, incremental processing, automatic cost center creation.
