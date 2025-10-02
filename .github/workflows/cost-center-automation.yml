@@ -35,7 +35,7 @@ jobs:
       run: pip install -r requirements.txt
     
     - name: Restore timestamp from cache
-      uses: actions/cache/restore@v3
+      uses: actions/cache/restore@v4
       with:
         path: exports/.last_run_timestamp
         key: incremental-timestamp-${{ github.repository }}
@@ -83,7 +83,7 @@ jobs:
     
     - name: Save timestamp to cache
       if: always()
-      uses: actions/cache/save@v3
+      uses: actions/cache/save@v4
       with:
         path: exports/.last_run_timestamp
         key: incremental-timestamp-${{ github.repository }}-${{ github.run_number }}
