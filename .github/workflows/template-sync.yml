@@ -92,7 +92,7 @@ jobs:
 
       - name: Open PR
         if: steps.check-updates.outputs.skip != 'true'
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.TEMPLATE_SYNC_TOKEN || github.token }}
           branch: template-sync
