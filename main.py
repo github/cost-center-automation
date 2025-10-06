@@ -15,6 +15,7 @@ from typing import Dict, List, Optional
 
 from src.github_api import GitHubCopilotManager
 from src.cost_center_manager import CostCenterManager
+from src.teams_cost_center_manager import TeamsCostCenterManager
 from src.config_manager import ConfigManager
 from src.logger_setup import setup_logging
 
@@ -56,6 +57,12 @@ def parse_arguments():
         "--incremental",
         action="store_true",
         help="Only process users added since last run (ideal for cron jobs)"
+    )
+    
+    parser.add_argument(
+        "--teams-mode",
+        action="store_true",
+        help="Use teams-based cost center assignment instead of PRU-based logic"
     )
     
     # Mode replaces --dry-run and --sync-cost-centers separation
@@ -100,6 +107,127 @@ def parse_arguments():
     )
     
     return parser.parse_args()
+
+
+def _handle_teams_mode(args, config: ConfigManager, teams_manager, logger) -> None:
+    """Handle teams-based cost center assignment mode."""
+    
+    logger.info("="*60)
+    logger.info("TEAMS MODE - GitHub Teams Integration")
+    logger.info("="*60)
+    
+    # Show teams configuration
+    print("\n===== Teams Mode Configuration =====")
+    teams_scope = config.teams_scope  # Already validated in main()
+    print(f"Scope: {teams_scope}")
+    print(f"Mode: {config.teams_mode}")
+    
+    if teams_scope == "enterprise":
+        print(f"Enterprise: {config.github_enterprise}")
+    else:
+        print(f"Organizations: {', '.join(config.teams_organizations)}")
+    
+    print(f"Auto-create cost centers: {config.teams_auto_create}")
+    
+    if config.teams_mode == "auto":
+        print(f"Cost center naming template: {config.teams_name_template}")
+    elif config.teams_mode == "manual":
+        print(f"Manual mappings configured: {len(config.teams_mappings)}")
+        for team_key, cost_center in config.teams_mappings.items():
+            print(f"  - {team_key} → {cost_center}")
+    
+    print("===== End of Configuration =====\n")
+    
+    # Exit early if only showing config
+    if args.show_config and not any([args.assign_cost_centers, args.summary_report]):
+        return
+    
+    # Generate summary report if requested
+    if args.summary_report:
+        logger.info("Generating teams-based cost center summary...")
+        summary = teams_manager.generate_summary()
+        
+        teams_scope = config.teams_scope  # Already validated in main()
+        
+        print("\n=== Teams Cost Center Summary ===")
+        print(f"Scope: {teams_scope}")
+        print(f"Mode: {summary['mode']}")
+        
+        if teams_scope == "enterprise":
+            print(f"Enterprise: {config.github_enterprise}")
+        else:
+            print(f"Organizations: {', '.join(summary['organizations'])}")
+        
+        print(f"Total teams: {summary['total_teams']}")
+        print(f"Cost centers: {summary['total_cost_centers']}")
+        print(f"Unique users: {summary['unique_users']}")
+        print(f"Note: Each user is assigned to exactly ONE cost center")
+        
+        if summary['cost_centers']:
+            print("\nPer-Cost-Center Breakdown:")
+            for cost_center, stats in summary['cost_centers'].items():
+                print(f"  {cost_center}: {stats['users']} users")
+    
+    # Assign cost centers if requested
+    if args.assign_cost_centers:
+        logger.info("Processing team-based cost center assignments...")
+        
+        if args.mode == "plan":
+            logger.info("MODE=plan (no changes will be made)")
+        
+        # Build and optionally sync assignments
+        if args.mode == "plan":
+            results = teams_manager.sync_team_assignments(mode="plan")
+        else:  # apply mode
+            # Safety confirmation unless --yes provided
+            if not args.yes:
+                print("\n⚠️  WARNING: You are about to APPLY team-based cost center assignments!")
+                print("This will assign users to cost centers based on their team membership.")
+                print("NOTE: Each user can only belong to ONE cost center.")
+                print("Users in multiple teams will be assigned to the LAST team's cost center.")
+                confirm = input("\nProceed? Type 'apply' to continue: ").strip().lower()
+                if confirm != "apply":
+                    logger.warning("Aborted by user before applying assignments")
+                    return
+            
+            logger.info("Applying team-based assignments to GitHub Enterprise...")
+            results = teams_manager.sync_team_assignments(mode="apply")
+            
+            if results:
+                # Process detailed results for summary
+                total_users_attempted = 0
+                total_users_successful = 0
+                total_users_failed = 0
+                
+                for cost_center_id, user_results in results.items():
+                    cc_successful = sum(1 for success in user_results.values() if success)
+                    cc_failed = len(user_results) - cc_successful
+                    total_users_attempted += len(user_results)
+                    total_users_successful += cc_successful
+                    total_users_failed += cc_failed
+                    
+                    if cc_failed > 0:
+                        logger.warning(f"Cost center {cost_center_id}: {cc_successful}/{len(user_results)} users successful")
+                    else:
+                        logger.info(f"Cost center {cost_center_id}: all {cc_successful} users successful")
+                
+                # Final summary
+                if total_users_failed > 0:
+                    logger.warning(f"FINAL RESULT: {total_users_successful}/{total_users_attempted} users successfully assigned ({total_users_failed} failed)")
+                else:
+                    logger.info(f"FINAL RESULT: All {total_users_successful} users successfully assigned! 🎉")
+                
+                # Show success summary
+                print("\n" + "="*60)
+                print("🎉 TEAMS MODE SUCCESS SUMMARY")
+                print("="*60)
+                print(f"  ✅ Team-based assignments completed")
+                print(f"  📊 Total users: {total_users_successful}/{total_users_attempted}")
+                if total_users_failed > 0:
+                    print(f"  ❌ Failed: {total_users_failed}")
+                print("="*60)
+    
+    logger.info("Teams mode execution completed successfully")
 
 
 def _show_success_summary(config: ConfigManager, args, users: Optional[List[Dict]] = None, original_user_count: Optional[int] = None, assignment_results: Optional[Dict] = None):
@@ -197,6 +325,43 @@ def main():
         # Initialize managers
         github_manager = GitHubCopilotManager(config)
         cost_center_manager = CostCenterManager(config, auto_create_enabled=args.create_cost_centers)
+        
+        # Check if teams mode is enabled (via flag or config)
+        teams_mode_enabled = args.teams_mode or config.teams_enabled
+        
+        if teams_mode_enabled:
+            # Validate teams configuration - scope is required
+            if not hasattr(config, 'teams_scope') or config.teams_scope is None:
+                logger.error("Teams mode requires 'scope' to be configured in config.teams.scope (must be 'organization' or 'enterprise')")
+                sys.exit(1)
+            
+            teams_scope = config.teams_scope
+            
+            # Validate scope value
+            if teams_scope not in ["organization", "enterprise"]:
+                logger.error(f"Invalid teams scope '{teams_scope}'. Must be 'organization' or 'enterprise'")
+                sys.exit(1)
+            
+            # Validate scope-specific requirements
+            if teams_scope == "organization":
+                if not config.teams_organizations:
+                    logger.error("Teams mode with scope='organization' requires organizations to be configured in config.teams.organizations")
+                    sys.exit(1)
+            elif teams_scope == "enterprise":
+                if not config.github_enterprise:
+                    logger.error("Teams mode with scope='enterprise' requires enterprise to be configured in config.github_enterprise")
+                    sys.exit(1)
+            
+            # Initialize teams manager
+            teams_manager = TeamsCostCenterManager(config, github_manager)
+            
+            scope_label = "enterprise" if teams_scope == "enterprise" else f"{len(config.teams_organizations)} organizations"
+            logger.info(f"Teams mode enabled: {config.teams_mode} mode with {teams_scope} scope ({scope_label})")
+            
+            # Handle teams mode flow
+            return _handle_teams_mode(args, config, teams_manager, logger)
+        
+        # ===== Standard PRU-based mode continues below =====
         
         # Always show configuration at the beginning of every run
         print("\n===== Current Configuration =====")

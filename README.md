@@ -50,15 +50,27 @@ That's it! Your Copilot users are now organized in cost centers for better billi
 
 ## Overview
 
-Automates GitHub Copilot license cost center assignments for enterprises using a simple two-tier model:
+Automates GitHub Copilot license cost center assignments for enterprises with two operational modes:
+
+### PRU-Based Mode (Default)
+Simple two-tier model based on PRU (Premium Request Unit) exceptions:
 - **Default**: All Copilot users are added to `00 - No PRU overages` cost center
 - **Exceptions**: Specified users are added to `01 - PRU overages allowed` cost center
+
+### Teams-Based Mode (New!)
+Automatically assigns users to cost centers based on their GitHub team membership:
+- **Auto Mode**: Creates one cost center per team automatically
+- **Manual Mode**: Maps specific teams to pre-defined cost centers
+- **Single Assignment**: Each user can only belong to ONE cost center (multi-team users get last team's cost center)
 
 Supports both interactive execution and automated scheduling with incremental processing.
 
 ## Features
 
+- **Dual operation modes**: PRU-based or Teams-based cost center assignment
 - **Automatic cost center creation**: Creates cost centers automatically (or use existing cost centers, if preferred)
+- **Teams integration**: Sync cost centers with GitHub team membership (auto or manual mapping)
+- **Multi-organization support**: Process teams from multiple GitHub organizations
 - **Incremental processing**: Only process users added since last run (perfect for cron jobs)
 - **Enhanced result logging**: Real-time success/failure tracking with user-level detail
 - Plan vs apply execution (`--mode plan|apply`) + interactive safety prompt (bypass with `--yes`)
@@ -68,7 +80,9 @@ Supports both interactive execution and automated scheduling with incremental pr
 ## Prerequisites
 
 - GitHub Enterprise Cloud admin access
-- GitHub Personal Access Token with `manage_billing:enterprise` scope
+- GitHub Personal Access Token with required scopes:
+  - `manage_billing:enterprise` - Required for all modes (cost center management)
+  - `read:org` - Required for Teams Mode (read teams and members)
 
 **Additional requirements for local execution:**
 - Python 3.8 or higher
@@ -181,6 +195,165 @@ cost_centers:
 3. **Assignment**: Uses the created cost center IDs for user assignments
 4. **Idempotent**: Safe to run multiple times - won't create duplicates
 
+## Teams Mode - GitHub Teams Integration
+
+The Teams Mode allows you to automatically assign users to cost centers based on their GitHub team membership. This is ideal for organizations that want cost center assignments to mirror their team structure.
+
+### Overview
+
+**Two operational modes:**
+- **Auto Mode**: Automatically creates one cost center per team
+- **Manual Mode**: Map specific teams to specific cost centers via configuration
+
+**Key Features:**
+- Multi-organization support (process teams from multiple orgs)
+- Multi-team membership handling (users in multiple teams get added to all corresponding cost centers)
+- Automatic cost center creation (optional)
+- Customizable naming templates for auto-created cost centers
+
+### Quick Start - Teams Mode
+
+```bash
+# Configure organizations in config.yaml first
+# Then run in plan mode to see what would happen:
+python main.py --teams-mode --assign-cost-centers --mode plan
+
+# Apply teams-based assignments
+python main.py --teams-mode --assign-cost-centers --mode apply
+
+# Generate summary report
+python main.py --teams-mode --summary-report
+
+# Non-interactive (for automation)
+python main.py --teams-mode --assign-cost-centers --mode apply --yes
+```
+
+### Configuration - Auto Mode
+
+Auto mode automatically creates one cost center per team:
+
+```yaml
+teams:
+  enabled: true
+  mode: "auto"  # One cost center per team
+  
+  # Organizations to query for teams
+  organizations:
+    - "my-github-org"
+    - "another-org"
+  
+  # Automatically create cost centers
+  auto_create_cost_centers: true
+  
+  # Naming template (Python format string)
+  # Available variables: {team_name}, {team_slug}, {org}
+  cost_center_name_template: "Team: {team_name}"
+```
+
+**Example:** If you have teams "Frontend" and "Backend" in org "acme-corp", this will:
+1. Create cost centers named "Team: Frontend" and "Team: Backend"
+2. Assign all "Frontend" team members to "Team: Frontend" cost center
+3. Assign all "Backend" team members to "Team: Backend" cost center
+
+### Configuration - Manual Mode
+
+Manual mode lets you explicitly map teams to cost centers:
+
+```yaml
+teams:
+  enabled: true
+  mode: "manual"  # Use explicit mappings
+  
+  organizations:
+    - "my-github-org"
+    - "another-org"
+  
+  auto_create_cost_centers: true  # Can still auto-create
+  
+  # Explicit team-to-cost-center mappings
+  # Format: "org/team-slug": "cost_center_id_or_name"
+  team_mappings:
+    "my-github-org/frontend-team": "CC-FRONTEND-001"
+    "my-github-org/backend-team": "CC-BACKEND-001"
+    "my-github-org/mobile-team": "Engineering: Mobile"  # Will be auto-created
+    "another-org/devops-team": "CC-DEVOPS-001"
+```
+
+**Notes:**
+- In manual mode, only mapped teams are processed
+- Unmapped teams are skipped (logged as warnings)
+- If `auto_create_cost_centers: true`, cost center names will be created as needed
+- If `auto_create_cost_centers: false`, values must be existing cost center IDs
+
+### Multi-Team Membership
+
+**Important Constraint:** Each user can only belong to **ONE cost center** at a time.
+
+**Behavior:** If a user is a member of multiple teams, they will be assigned to the cost center of the **last team processed**.
+
+**Example:**
+```
+User: alice
+Teams: frontend-team, mobile-team
+Processing order: frontend-team (first), mobile-team (second)
+Result: alice is assigned to "Team: Mobile" cost center (last team wins)
+```
+
+**Warning:** The tool will log warnings for users in multiple teams, showing which cost center they'll be assigned to. Consider using manual mode with explicit mappings if you need more control over multi-team conflicts.
+
+### Teams Mode vs PRU Mode
+
+**Teams Mode** and **PRU Mode** are **independent and mutually exclusive**:
+
+- Use `--teams-mode` flag OR set `teams.enabled: true` in config for Teams Mode
+- Without the flag, the tool uses PRU-based mode (default)
+- Cannot run both modes simultaneously in a single execution
+- Both modes support the same flags: `--mode plan|apply`, `--yes`, `--summary-report`
+
+**Recommendation:** Use Teams Mode for team-based cost allocation, PRU Mode for simple usage-based allocation.
+
+### Example Workflows
+
+**Automatic team sync (weekly cron):**
+```bash
+# Automatically sync all teams to cost centers every week
+0 2 * * 1 cd /path/to/repo && python main.py --teams-mode --assign-cost-centers --mode apply --yes
+```
+
+**Manual mapping with specific teams:**
+```yaml
+# config.yaml
+teams:
+  enabled: false  # Don't auto-enable
+  mode: "manual"
+  organizations: ["acme-corp"]
+  team_mappings:
+    "acme-corp/engineering": "Engineering Costs"
+    "acme-corp/product": "Product Costs"
+    "acme-corp/design": "Design Costs"
+```
+
+```bash
+# Run with teams mode flag
+python main.py --teams-mode --assign-cost-centers --mode apply --yes
+```
+
+### Multi-Team Conflicts
+
+**Processing Order Matters:** Teams are processed in the order they are returned by the GitHub API. For users in multiple teams, the last team processed determines their final cost center assignment.
+
+**Best Practices:**
+- Review warning logs for multi-team users before applying
+- Use manual mode to explicitly control which teams are processed
+- Consider team structure - users should ideally belong to one primary team for cost allocation
+
+### Required Permissions
+
+For Teams Mode, your GitHub token needs:
+- `manage_billing:enterprise` - To create/update cost centers
+- `read:org` - To read organization teams and members
+- `admin:org` - If you need to read private team information
+
 ## Usage
 
 ### Basic Usage
@@ -199,7 +372,7 @@ python main.py --assign-cost-centers --mode plan
 python main.py --assign-cost-centers --mode apply
 ```
 
-### Additional Examples
+### Additional Examples - PRU Mode
 
 ```bash
 # Apply without interactive confirmation (for automation)
@@ -220,6 +393,9 @@ python main.py --create-cost-centers --assign-cost-centers --mode apply --yes
 # Incremental processing - only process users added since last run (ideal for cron jobs)
 python main.py --assign-cost-centers --incremental --mode apply --yes
 
+# Note: Incremental mode is NOT supported for teams mode (organization or enterprise).
+# Teams mode always processes all team members. See below for teams mode examples.
+
 # Plan mode with incremental processing (see what new users would be processed)
 python main.py --assign-cost-centers --incremental --mode plan
 
@@ -227,9 +403,38 @@ python main.py --assign-cost-centers --incremental --mode plan
 python main.py --assign-cost-centers --incremental --mode apply --yes --summary-report
 ```
 
+### Additional Examples - Teams Mode
+
+```bash
+# Show teams configuration
+python main.py --teams-mode --show-config
+
+# Plan teams-based assignments (see what would happen)
+python main.py --teams-mode --assign-cost-centers --mode plan
+
+# Apply teams-based assignments (with confirmation)
+python main.py --teams-mode --assign-cost-centers --mode apply
+
+# Apply without confirmation (for automation)
+python main.py --teams-mode --assign-cost-centers --mode apply --yes
+
+# Generate teams summary report
+python main.py --teams-mode --summary-report
+
+# Combine summary report with assignment (plan mode)
+python main.py --teams-mode --assign-cost-centers --summary-report --mode plan
+
+# Full teams sync (non-interactive, for cron)
+python main.py --teams-mode --assign-cost-centers --mode apply --yes --summary-report --verbose
+
+# Note: Incremental mode is NOT supported for teams mode. All team members are processed every run.
+```
+
 ## Incremental Processing
 
-For efficient cron job automation, the `--incremental` flag processes only users added since the last successful run:
+For efficient cron job automation, the `--incremental` flag processes only users added since the last successful run (PRU-based mode only):
+
+**Teams mode does NOT support incremental processing.** All team members are processed every run, regardless of when they joined.
 
 ### How it Works
 

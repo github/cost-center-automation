@@ -2,7 +2,7 @@
 github:
   # Enterprise name is required. Prefer setting via environment var GITHUB_ENTERPRISE.
   # Leave as placeholder or blank if supplying via environment.
-  enterprise: "REPLACE_WITH_ENTERPRISE_SLUG"
+  enterprise: "avocado-corp"
 
 # Cost Center Settings
 cost_centers:
@@ -22,6 +22,34 @@ cost_centers:
   auto_create: true  # Auto-create required cost centers if IDs are placeholders
   no_prus_cost_center_name: "00 - No PRU overages"  # Name for no-PRU cost center if auto-created
   prus_allowed_cost_center_name: "01 - PRU overages allowed"  # Name for PRU-allowed cost center if auto-created
+
+# Teams Integration Configuration
+teams:
+  # Enable teams-based cost center management
+  enabled: true
+  
+  # Scope: 'organization' (org-level teams) or 'enterprise' (enterprise-level teams)
+  scope: "enterprise"  # Options: "organization" or "enterprise"
+  
+  # Mode: 'auto' (one cost center per team) or 'manual' (use mappings below)
+  mode: "auto"  # Options: "auto" or "manual"
+  
+  # Organizations to query for teams (only used when scope is 'organization')
+  organizations:
+    - "cost-center-automation"
+  
+  # Auto-creation settings for teams mode
+  auto_create_cost_centers: true  # Automatically create cost centers for teams
+  
+  # Cost center naming template for auto mode (uses Python format string)
+  # Available variables: {team_name}, {team_slug}, {org}
+  cost_center_name_template: "Team: {team_name}"
+  
+  # Manual team-to-cost-center mappings (only used when mode is 'manual')
+  # Format: "org/team-slug": "cost_center_id" or "cost_center_name" (if auto_create enabled)
+  team_mappings: {}
+    # "my-org/frontend-team": "CC-FRONTEND-001"
+    # "my-org/backend-team": "CC-BACKEND-001"
 
 # Logging Configuration
 logging:

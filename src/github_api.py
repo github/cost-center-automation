@@ -298,6 +298,208 @@ class GitHubCopilotManager:
         url = f"{self.base_url}/rate_limit"
         return self._make_request(url)
     
+    def list_org_teams(self, org: str) -> List[Dict]:
+        """
+        List all teams in an organization.
+        
+        Args:
+            org: Organization name
+            
+        Returns:
+            List of team dictionaries with id, name, slug, description, etc.
+        """
+        self.logger.info(f"Fetching teams for organization: {org}")
+        url = f"{self.base_url}/orgs/{org}/teams"
+        
+        all_teams = []
+        page = 1
+        per_page = 100
+        
+        while True:
+            params = {"page": page, "per_page": per_page}
+            
+            try:
+                response_data = self._make_request(url, params)
+                
+                # Response is a list directly for teams endpoint
+                if not isinstance(response_data, list):
+                    self.logger.error(f"Unexpected response format for teams: {type(response_data)}")
+                    break
+                
+                teams = response_data
+                if not teams:
+                    break
+                
+                all_teams.extend(teams)
+                self.logger.info(f"Fetched page {page} with {len(teams)} teams")
+                
+                page += 1
+                
+                # Check if we have more pages
+                if len(teams) < per_page:
+                    break
+                    
+            except requests.exceptions.RequestException as e:
+                self.logger.error(f"Failed to fetch teams for org {org}: {str(e)}")
+                break
+        
+        self.logger.info(f"Total teams found in {org}: {len(all_teams)}")
+        return all_teams
+    
+    def get_team_members(self, org: str, team_slug: str) -> List[Dict]:
+        """
+        Get all members of a specific team.
+        
+        Args:
+            org: Organization name
+            team_slug: Team slug (URL-friendly team name)
+            
+        Returns:
+            List of team member dictionaries with login, id, name, etc.
+        """
+        self.logger.debug(f"Fetching members for team: {org}/{team_slug}")
+        url = f"{self.base_url}/orgs/{org}/teams/{team_slug}/members"
+        
+        all_members = []
+        page = 1
+        per_page = 100
+        
+        while True:
+            params = {"page": page, "per_page": per_page}
+            
+            try:
+                response_data = self._make_request(url, params)
+                
+                # Response is a list directly for members endpoint
+                if not isinstance(response_data, list):
+                    self.logger.error(f"Unexpected response format for team members: {type(response_data)}")
+                    break
+                
+                members = response_data
+                if not members:
+                    break
+                
+                all_members.extend(members)
+                self.logger.debug(f"Fetched page {page} with {len(members)} members for {org}/{team_slug}")
+                
+                page += 1
+                
+                # Check if we have more pages
+                if len(members) < per_page:
+                    break
+                    
+            except requests.exceptions.RequestException as e:
+                self.logger.warning(f"Failed to fetch members for team {org}/{team_slug}: {str(e)}")
+                break
+        
+        self.logger.info(f"Total members found in {org}/{team_slug}: {len(all_members)}")
+        return all_members
+    
+    def list_enterprise_teams(self) -> List[Dict]:
+        """
+        List all teams in the enterprise.
+        
+        Returns:
+            List of team dictionaries with id, name, slug, description, etc.
+        """
+        if not self.use_enterprise or not self.enterprise_name:
+            self.logger.error("Enterprise name required for listing enterprise teams")
+            return []
+        
+        self.logger.info(f"Fetching enterprise teams for: {self.enterprise_name}")
+        url = f"{self.base_url}/enterprises/{self.enterprise_name}/teams"
+        
+        all_teams = []
+        page = 1
+        per_page = 100
+        
+        while True:
+            params = {"page": page, "per_page": per_page}
+            
+            try:
+                response_data = self._make_request(url, params)
+                
+                # Response is a list directly for teams endpoint
+                if not isinstance(response_data, list):
+                    self.logger.error(f"Unexpected response format for enterprise teams: {type(response_data)}")
+                    break
+                
+                teams = response_data
+                if not teams:
+                    break
+                
+                all_teams.extend(teams)
+                self.logger.info(f"Fetched page {page} with {len(teams)} enterprise teams")
+                
+                page += 1
+                
+                # Check if we have more pages
+                if len(teams) < per_page:
+                    break
+                    
+            except requests.exceptions.RequestException as e:
+                self.logger.error(f"Failed to fetch enterprise teams: {str(e)}")
+                break
+        
+        self.logger.info(f"Total enterprise teams found: {len(all_teams)}")
+        return all_teams
+    
+    def get_enterprise_team_members(self, team_slug: str) -> List[Dict]:
+        """
+        Get all members of a specific enterprise team.
+        
+        Args:
+            team_slug: Team slug (URL-friendly team name)
+            
+        Returns:
+            List of team member dictionaries with login, id, name, etc.
+        """
+        if not self.use_enterprise or not self.enterprise_name:
+            self.logger.error("Enterprise name required for fetching enterprise team members")
+            return []
+        
+        self.logger.debug(f"Fetching members for enterprise team: {team_slug}")
+        url = f"{self.base_url}/enterprises/{self.enterprise_name}/teams/{team_slug}/memberships"
+        
+        all_members = []
+        page = 1
+        per_page = 100
+        
+        while True:
+            params = {"page": page, "per_page": per_page}
+            
+            try:
+                response_data = self._make_request(url, params)
+                
+                # Response is a list directly for memberships endpoint
+                if not isinstance(response_data, list):
+                    self.logger.error(f"Unexpected response format for enterprise team members: {type(response_data)}")
+                    self.logger.debug(f"Response data: {response_data}")
+                    break
+                
+                members = response_data
+                if not members:
+                    break
+                
+                # Enterprise teams memberships endpoint returns user objects directly (not wrapped)
+                # Just add them all to our list
+                all_members.extend(members)
+                
+                self.logger.debug(f"Fetched page {page} with {len(members)} members for enterprise team {team_slug}")
+                
+                page += 1
+                
+                # Check if we have more pages
+                if len(members) < per_page:
+                    break
+                    
+            except requests.exceptions.RequestException as e:
+                self.logger.warning(f"Failed to fetch members for enterprise team {team_slug}: {str(e)}")
+                break
+        
+        self.logger.info(f"Total members found in enterprise team {team_slug}: {len(all_members)}")
+        return all_members
+    
     def create_cost_center(self, name: str) -> Optional[str]:
         """
         Create a new cost center in the enterprise.

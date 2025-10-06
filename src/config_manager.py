@@ -107,6 +107,16 @@ class ConfigManager:
             self.enable_incremental = cost_center_config.get("enable_incremental", False)
             self.timestamp_file = Path(self.export_dir) / ".last_run_timestamp"
             
+            # Teams integration configuration
+            teams_config = config_data.get("teams", {})
+            self.teams_enabled = teams_config.get("enabled", False)
+            self.teams_scope = teams_config.get("scope")  # Required: "organization" or "enterprise"
+            self.teams_mode = teams_config.get("mode", "auto")  # "auto" or "manual"
+            self.teams_organizations = teams_config.get("organizations", [])
+            self.teams_auto_create = teams_config.get("auto_create_cost_centers", True)
+            self.teams_name_template = teams_config.get("cost_center_name_template", "Team: {team_name}")
+            self.teams_mappings = teams_config.get("team_mappings", {})
+            
             # Store full config for other methods
             self.config = config_data
             

@@ -25,3 +25,33 @@ cost_centers:
   # Cost center names (only used when auto_create is true)
   no_prus_cost_center_name: "00 - No PRU overages"  # Name for no-PRU cost center
   prus_allowed_cost_center_name: "01 - PRU overages allowed"  # Name for PRU-allowed cost center
+
+# Teams Integration Configuration
+teams:
+  # Enable teams-based cost center management
+  enabled: false
+  
+  # Scope: 'organization' (org-level teams) or 'enterprise' (enterprise-level teams)
+  scope: "organization"  # Options: "organization" or "enterprise"
+  
+  # Mode: 'auto' (one cost center per team) or 'manual' (use mappings below)
+  mode: "auto"  # Options: "auto" or "manual"
+  
+  # Organizations to query for teams (only used when scope is 'organization')
+  organizations: []
+    # - "my-org-1"
+    # - "my-org-2"
+  
+  # Auto-creation settings for teams mode
+  auto_create_cost_centers: true  # Automatically create cost centers for teams
+  
+  # Cost center naming template for auto mode (uses Python format string)
+  # Available variables: {team_name}, {team_slug}, {org}
+  cost_center_name_template: "Team: {team_name}"
+  
+  # Manual team-to-cost-center mappings (only used when mode is 'manual')
+  # Format: "org/team-slug": "cost_center_id" or "cost_center_name" (if auto_create enabled)
+  team_mappings: {}
+    # "my-org/frontend-team": "CC-FRONTEND-001"
+    # "my-org/backend-team": "CC-BACKEND-001"
+    # "other-org/devops-team": "Team: DevOps"  # Will be auto-created if auto_create is true
