@@ -362,10 +362,11 @@ class TeamsCostCenterManager:
             for cost_center_id, usernames in id_based_assignments.items():
                 self.logger.info(f"  {cost_center_id}: {len(usernames)} users")
             
-            # In plan mode, also show what orphaned users would be removed
+            # In plan mode, show that orphaned users would be checked if the option is enabled
             if self.config.teams_remove_orphaned_users:
-                self.logger.info("\nMODE=plan: Would check for and remove orphaned users...")
-                self._show_orphaned_users_plan(id_based_assignments, cost_center_id_map)
+                self.logger.info("\nMODE=plan: Orphaned user detection is ENABLED")
+                self.logger.info("  In apply mode, users in cost centers but not in teams will be removed")
+                self.logger.info("  (Cannot show specific orphaned users in plan mode - cost centers don't exist yet)")
             
             return {}
         
@@ -385,49 +386,6 @@ class TeamsCostCenterManager:
                 results[cost_center_id].update(user_results)
         
         return results
-    
-    def _show_orphaned_users_plan(self, expected_assignments: Dict[str, List[str]],
-                                   cost_center_id_map: Dict[str, str]) -> None:
-        """
-        Show what orphaned users would be removed (plan mode only).
-        
-        Args:
-            expected_assignments: Dict mapping cost_center_id -> list of expected usernames
-            cost_center_id_map: Dict mapping cost_center_name -> cost_center_id
-        """
-        total_orphaned = 0
-        
-        for cost_center_id, expected_users in expected_assignments.items():
-            # Get current members of the cost center
-            current_members = self.github_manager.get_cost_center_members(cost_center_id)
-            
-            # Find orphaned users
-            expected_users_set = set(expected_users)
-            current_members_set = set(current_members)
-            orphaned_users = current_members_set - expected_users_set
-            
-            if orphaned_users:
-                # Find the cost center name for logging
-                cost_center_name = None
-                for name, cc_id in cost_center_id_map.items():
-                    if cc_id == cost_center_id:
-                        cost_center_name = name
-                        break
-                
-                display_name = cost_center_name or cost_center_id
-                
-                self.logger.info(
-                    f"  Would remove {len(orphaned_users)} orphaned users from '{display_name}':"
-                )
-                for username in sorted(orphaned_users):
-                    self.logger.info(f"    - {username}")
-                
-                total_orphaned += len(orphaned_users)
-        
-        if total_orphaned > 0:
-            self.logger.info(f"\nWould remove {total_orphaned} orphaned users total")
-        else:
-            self.logger.info("  No orphaned users detected")
     
     def _remove_orphaned_users(self, expected_assignments: Dict[str, List[str]], 
                               cost_center_id_map: Dict[str, str]) -> Dict[str, Dict[str, bool]]:
