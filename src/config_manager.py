@@ -116,6 +116,7 @@ class ConfigManager:
             self.teams_auto_create = teams_config.get("auto_create_cost_centers", True)
             self.teams_name_template = teams_config.get("cost_center_name_template", "Team: {team_name}")
             self.teams_mappings = teams_config.get("team_mappings", {})
+            self.teams_remove_orphaned_users = teams_config.get("remove_orphaned_users", False)
             
             # Store full config for other methods
             self.config = config_data

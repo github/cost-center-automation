@@ -642,3 +642,98 @@ class GitHubCopilotManager:
         
         self.logger.info(f"Cost centers ready - No PRU: {no_pru_id}, PRU Allowed: {pru_allowed_id}")
         return result
+    
+    def get_cost_center_members(self, cost_center_id: str) -> List[str]:
+        """
+        Get all members (usernames) currently assigned to a cost center.
+        
+        Args:
+            cost_center_id: The ID of the cost center
+            
+        Returns:
+            List of usernames currently in the cost center
+        """
+        if not self.use_enterprise or not self.enterprise_name:
+            self.logger.error("Cost center operations only available for GitHub Enterprise")
+            return []
+        
+        url = f"{self.base_url}/enterprises/{self.enterprise_name}/settings/billing/cost-centers/{cost_center_id}"
+        
+        try:
+            response_data = self._make_request(url)
+            
+            # The response should contain resources with users
+            resources = response_data.get('resources', [])
+            usernames = []
+            
+            for resource in resources:
+                # Each resource should have a 'users' array
+                users = resource.get('users', [])
+                for user in users:
+                    username = user.get('login')
+                    if username:
+                        usernames.append(username)
+            
+            self.logger.debug(f"Cost center {cost_center_id} has {len(usernames)} members")
+            return usernames
+            
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Failed to get members for cost center {cost_center_id}: {str(e)}")
+            return []
+    
+    def remove_users_from_cost_center(self, cost_center_id: str, usernames: List[str]) -> Dict[str, bool]:
+        """
+        Remove multiple users from a specific cost center.
+        
+        Args:
+            cost_center_id: The ID of the cost center
+            usernames: List of usernames to remove
+            
+        Returns:
+            Dict mapping username -> success status
+        """
+        if not self.use_enterprise or not self.enterprise_name:
+            self.logger.error("Cost center operations only available for GitHub Enterprise")
+            return {user: False for user in usernames}
+        
+        if not usernames:
+            return {}
+        
+        url = f"{self.base_url}/enterprises/{self.enterprise_name}/settings/billing/cost-centers/{cost_center_id}/resource"
+        
+        payload = {
+            "users": usernames
+        }
+        
+        headers = {
+            "accept": "application/vnd.github+json",
+            "x-github-api-version": "2022-11-28",
+            "content-type": "application/json"
+        }
+        
+        try:
+            response = self.session.delete(url, json=payload, headers=headers)
+            
+            # Handle rate limiting
+            if response.status_code == 429:
+                reset_time = int(response.headers.get('X-RateLimit-Reset', time.time() + 60))
+                wait_time = reset_time - int(time.time()) + 1
+                self.logger.warning(f"Rate limit hit. Waiting {wait_time} seconds...")
+                time.sleep(wait_time)
+                return self.remove_users_from_cost_center(cost_center_id, usernames)
+            
+            if response.status_code in [200, 204]:
+                self.logger.info(f"✅ Successfully removed {len(usernames)} users from cost center {cost_center_id}")
+                for username in usernames:
+                    self.logger.info(f"   ✅ {username} removed from {cost_center_id}")
+                return {user: True for user in usernames}
+            else:
+                self.logger.error(
+                    f"Failed to remove users from cost center {cost_center_id}: "
+                    f"{response.status_code} {response.text}"
+                )
+                return {user: False for user in usernames}
+                
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Error removing users from cost center {cost_center_id}: {str(e)}")
+            return {user: False for user in usernames}

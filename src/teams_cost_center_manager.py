@@ -361,13 +361,147 @@ class TeamsCostCenterManager:
             self.logger.info("MODE=plan: Would sync the following assignments:")
             for cost_center_id, usernames in id_based_assignments.items():
                 self.logger.info(f"  {cost_center_id}: {len(usernames)} users")
+            
+            # In plan mode, also show what orphaned users would be removed
+            if self.config.teams_remove_orphaned_users:
+                self.logger.info("\nMODE=plan: Would check for and remove orphaned users...")
+                self._show_orphaned_users_plan(id_based_assignments, cost_center_id_map)
+            
             return {}
         
         # Apply mode: actually sync
         self.logger.info("Syncing team-based assignments to GitHub Enterprise...")
         results = self.github_manager.bulk_update_cost_center_assignments(id_based_assignments)
         
+        # Handle orphaned users if configured
+        if self.config.teams_remove_orphaned_users:
+            self.logger.info("Checking for orphaned users (users in cost centers but not in teams)...")
+            orphaned_results = self._remove_orphaned_users(id_based_assignments, cost_center_id_map)
+            
+            # Merge orphaned user removal results into main results
+            for cost_center_id, user_results in orphaned_results.items():
+                if cost_center_id not in results:
+                    results[cost_center_id] = {}
+                results[cost_center_id].update(user_results)
+        
         return results
+    
+    def _show_orphaned_users_plan(self, expected_assignments: Dict[str, List[str]],
+                                   cost_center_id_map: Dict[str, str]) -> None:
+        """
+        Show what orphaned users would be removed (plan mode only).
+        
+        Args:
+            expected_assignments: Dict mapping cost_center_id -> list of expected usernames
+            cost_center_id_map: Dict mapping cost_center_name -> cost_center_id
+        """
+        total_orphaned = 0
+        
+        for cost_center_id, expected_users in expected_assignments.items():
+            # Get current members of the cost center
+            current_members = self.github_manager.get_cost_center_members(cost_center_id)
+            
+            # Find orphaned users
+            expected_users_set = set(expected_users)
+            current_members_set = set(current_members)
+            orphaned_users = current_members_set - expected_users_set
+            
+            if orphaned_users:
+                # Find the cost center name for logging
+                cost_center_name = None
+                for name, cc_id in cost_center_id_map.items():
+                    if cc_id == cost_center_id:
+                        cost_center_name = name
+                        break
+                
+                display_name = cost_center_name or cost_center_id
+                
+                self.logger.info(
+                    f"  Would remove {len(orphaned_users)} orphaned users from '{display_name}':"
+                )
+                for username in sorted(orphaned_users):
+                    self.logger.info(f"    - {username}")
+                
+                total_orphaned += len(orphaned_users)
+        
+        if total_orphaned > 0:
+            self.logger.info(f"\nWould remove {total_orphaned} orphaned users total")
+        else:
+            self.logger.info("  No orphaned users detected")
+    
+    def _remove_orphaned_users(self, expected_assignments: Dict[str, List[str]], 
+                              cost_center_id_map: Dict[str, str]) -> Dict[str, Dict[str, bool]]:
+        """
+        Detect and remove orphaned users from cost centers.
+        
+        Orphaned users are those who are in a cost center but not in the corresponding team.
+        
+        Args:
+            expected_assignments: Dict mapping cost_center_id -> list of expected usernames
+            cost_center_id_map: Dict mapping cost_center_name -> cost_center_id
+            
+        Returns:
+            Dict mapping cost_center_id -> Dict mapping username -> removal success status
+        """
+        removal_results = {}
+        total_orphaned = 0
+        total_removed = 0
+        
+        for cost_center_id, expected_users in expected_assignments.items():
+            # Get current members of the cost center
+            current_members = self.github_manager.get_cost_center_members(cost_center_id)
+            
+            # Find orphaned users (in cost center but not in expected team members)
+            expected_users_set = set(expected_users)
+            current_members_set = set(current_members)
+            orphaned_users = current_members_set - expected_users_set
+            
+            if orphaned_users:
+                # Find the cost center name for logging
+                cost_center_name = None
+                for name, cc_id in cost_center_id_map.items():
+                    if cc_id == cost_center_id:
+                        cost_center_name = name
+                        break
+                
+                display_name = cost_center_name or cost_center_id
+                
+                self.logger.warning(
+                    f"⚠️  Found {len(orphaned_users)} orphaned users in cost center '{display_name}' "
+                    f"(in cost center but not in team)"
+                )
+                
+                for username in sorted(orphaned_users):
+                    self.logger.warning(f"   ⚠️  {username} is in cost center but not in team")
+                
+                total_orphaned += len(orphaned_users)
+                
+                # Remove orphaned users
+                self.logger.info(f"Removing {len(orphaned_users)} orphaned users from '{display_name}'...")
+                removal_status = self.github_manager.remove_users_from_cost_center(
+                    cost_center_id, 
+                    list(orphaned_users)
+                )
+                
+                removal_results[cost_center_id] = removal_status
+                successful_removals = sum(1 for success in removal_status.values() if success)
+                total_removed += successful_removals
+                
+                if successful_removals < len(orphaned_users):
+                    failed = len(orphaned_users) - successful_removals
+                    self.logger.warning(
+                        f"Failed to remove {failed}/{len(orphaned_users)} orphaned users from '{display_name}'"
+                    )
+        
+        if total_orphaned > 0:
+            self.logger.info(
+                f"📊 Orphaned users summary: Found {total_orphaned} orphaned users, "
+                f"successfully removed {total_removed}"
+            )
+        else:
+            self.logger.info("✅ No orphaned users found - all cost centers are in sync with teams")
+        
+        return removal_results
     
     def generate_summary(self) -> Dict:
         """

@@ -128,6 +128,7 @@ def _handle_teams_mode(args, config: ConfigManager, teams_manager, logger) -> No
         print(f"Organizations: {', '.join(config.teams_organizations)}")
     
     print(f"Auto-create cost centers: {config.teams_auto_create}")
+    print(f"Remove orphaned users: {config.teams_remove_orphaned_users}")
     
     if config.teams_mode == "auto":
         print(f"Cost center naming template: {config.teams_name_template}")

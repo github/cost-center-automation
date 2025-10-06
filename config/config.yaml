@@ -45,6 +45,9 @@ teams:
   # Available variables: {team_name}, {team_slug}, {org}
   cost_center_name_template: "Team: {team_name}"
   
+  # Orphaned user handling: remove users from cost centers if they're no longer in the team
+  remove_orphaned_users: false  # Set to true to automatically remove orphaned users
+  
   # Manual team-to-cost-center mappings (only used when mode is 'manual')
   # Format: "org/team-slug": "cost_center_id" or "cost_center_name" (if auto_create enabled)
   team_mappings: {}
