@@ -46,7 +46,7 @@ class GitHubCopilotManager:
         session.headers.update({
             "Authorization": f"token {self.config.github_token}",
             "Accept": "application/vnd.github+json",
-            "User-Agent": "Copilot-Cost-Center-Manager",
+            "User-Agent": "cost-center-automation",
             "X-GitHub-Api-Version": "2022-11-28"
         })
         
