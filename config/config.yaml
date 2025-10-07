@@ -2,7 +2,7 @@
 github:
   # Enterprise name is required. Prefer setting via environment var GITHUB_ENTERPRISE.
   # Leave as placeholder or blank if supplying via environment.
-  enterprise: "avocado-corp"
+  enterprise: ""
 
 # Cost Center Settings
 cost_centers:
@@ -36,7 +36,7 @@ teams:
   
   # Organizations to query for teams (only used when scope is 'organization')
   organizations:
-    - "cost-center-automation"
+    - "your-org-name"
   
   # Auto-creation settings for teams mode
   auto_create_cost_centers: true  # Automatically create cost centers for teams
