@@ -186,6 +186,8 @@ class GitHubCopilotManager:
     def add_users_to_cost_center(self, cost_center_id: str, usernames: List[str]) -> Dict[str, bool]:
         """Add multiple users (up to 50) to a specific cost center.
         
+        Only adds users who are not already in the cost center to avoid unnecessary API calls.
+        
         Returns:
             Dict mapping username -> success status for detailed logging
         """
@@ -196,11 +198,30 @@ class GitHubCopilotManager:
         if len(usernames) > 50:
             self.logger.error(f"Cannot add more than 50 users at once. Got {len(usernames)} users.")
             return {username: False for username in usernames}
+        
+        # Get current members to avoid re-adding users who are already assigned
+        current_members = self.get_cost_center_members(cost_center_id)
+        current_members_set = set(current_members)
+        
+        # Filter to only users who need to be added
+        users_to_add = [u for u in usernames if u not in current_members_set]
+        users_already_assigned = [u for u in usernames if u in current_members_set]
+        
+        # Log users who are already assigned
+        if users_already_assigned:
+            self.logger.debug(f"Skipping {len(users_already_assigned)} users already in cost center {cost_center_id}: {users_already_assigned}")
+        
+        # If no users need to be added, return success for all
+        if not users_to_add:
+            self.logger.info(f"All {len(usernames)} users already assigned to cost center {cost_center_id}")
+            return {username: True for username in usernames}
+        
+        self.logger.info(f"Adding {len(users_to_add)} new users to cost center {cost_center_id} (skipping {len(users_already_assigned)} already assigned)")
             
         url = f"{self.base_url}/enterprises/{self.enterprise_name}/settings/billing/cost-centers/{cost_center_id}/resource"
         
         payload = {
-            "users": usernames
+            "users": users_to_add  # Only send users who need to be added
         }
         
         # Set proper headers including API version
@@ -222,21 +243,30 @@ class GitHubCopilotManager:
                 return self.add_users_to_cost_center(cost_center_id, usernames)
             
             if response.status_code in [200, 201, 204]:
-                self.logger.info(f"✅ Successfully assigned {len(usernames)} users to cost center {cost_center_id}")
-                for username in usernames:
+                self.logger.info(f"✅ Successfully added {len(users_to_add)} users to cost center {cost_center_id}")
+                
+                for username in users_to_add:
                     self.logger.info(f"   ✅ {username} → {cost_center_id}")
+                
+                # Return success for all users (both added and already assigned)
                 return {username: True for username in usernames}
             else:
-                self.logger.error(f"❌ Failed to assign users to cost center {cost_center_id}: {response.status_code} {response.text}")
-                for username in usernames:
+                self.logger.error(f"❌ Failed to add users to cost center {cost_center_id}: {response.status_code} {response.text}")
+                for username in users_to_add:
                     self.logger.error(f"   ❌ {username} → {cost_center_id} (API Error)")
-                return {username: False for username in usernames}
+                # Failed users get False, already assigned users get True
+                results = {username: False for username in users_to_add}
+                results.update({username: True for username in users_already_assigned})
+                return results
                 
         except requests.exceptions.RequestException as e:
-            self.logger.error(f"❌ Error assigning users to cost center {cost_center_id}: {str(e)}")
-            for username in usernames:
+            self.logger.error(f"❌ Error adding users to cost center {cost_center_id}: {str(e)}")
+            for username in users_to_add:
                 self.logger.error(f"   ❌ {username} → {cost_center_id} (Network Error)")
-            return {username: False for username in usernames}
+            # Failed users get False, already assigned users get True
+            results = {username: False for username in users_to_add}
+            results.update({username: True for username in users_already_assigned})
+            return results
 
     def bulk_update_cost_center_assignments(self, cost_center_assignments: Dict[str, List[str]]) -> Dict[str, Dict[str, bool]]:
         """
@@ -683,15 +713,14 @@ class GitHubCopilotManager:
         try:
             response_data = self._make_request(url)
             
-            # The response should contain resources with users
+            # The response contains a resources array with type and name fields
             resources = response_data.get('resources', [])
             usernames = []
             
             for resource in resources:
-                # Each resource should have a 'users' array
-                users = resource.get('users', [])
-                for user in users:
-                    username = user.get('login')
+                # Each resource has 'type' (e.g., "User") and 'name' (username)
+                if resource.get('type') == 'User':
+                    username = resource.get('name')
                     if username:
                         usernames.append(username)
             
