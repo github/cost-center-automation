@@ -3,6 +3,7 @@ GitHub API Manager for Copilot license operations.
 """
 
 import logging
+import re
 import time
 from typing import Dict, List, Optional
 from datetime import datetime
@@ -544,9 +545,29 @@ class GitHubCopilotManager:
                 self.logger.info(f"Successfully created cost center '{name}' with ID: {cost_center_id}")
                 return cost_center_id
             elif response.status_code == 409:
-                # Cost center already exists, find it by name
-                self.logger.info(f"Cost center '{name}' already exists, finding existing ID...")
-                return self._find_cost_center_by_name(name)
+                # Cost center already exists - try to extract UUID from error message first
+                self.logger.info(f"Cost center '{name}' already exists, extracting existing ID...")
+                
+                try:
+                    response_data = response.json()
+                    error_message = response_data.get('message', '')
+                    
+                    # Try to extract UUID from message: "...existing cost center UUID: <uuid>..."
+                    uuid_pattern = r'existing cost center UUID:\s*([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'
+                    match = re.search(uuid_pattern, error_message, re.IGNORECASE)
+                    
+                    if match:
+                        cost_center_id = match.group(1)
+                        self.logger.info(f"Extracted existing cost center ID from API response: {cost_center_id}")
+                        return cost_center_id
+                    else:
+                        self.logger.warning(f"Could not extract UUID from 409 response message: {error_message}")
+                        self.logger.info("Falling back to name search to find existing cost center...")
+                        return self._find_cost_center_by_name(name)
+                        
+                except (ValueError, KeyError) as e:
+                    self.logger.warning(f"Could not parse 409 response: {str(e)}, falling back to name search...")
+                    return self._find_cost_center_by_name(name)
             else:
                 self.logger.error(f"Failed to create cost center '{name}': {response.status_code} {response.text}")
                 return None
