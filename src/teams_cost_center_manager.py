@@ -405,9 +405,16 @@ class TeamsCostCenterManager:
         total_orphaned = 0
         total_removed = 0
         
+        self.logger.info(f"Checking {len(expected_assignments)} cost centers for orphaned users...")
+        
         for cost_center_id, expected_users in expected_assignments.items():
             # Get current members of the cost center
             current_members = self.github_manager.get_cost_center_members(cost_center_id)
+            
+            # Debug logging
+            self.logger.debug(f"Cost center {cost_center_id}: {len(current_members)} current, {len(expected_users)} expected")
+            self.logger.debug(f"  Current: {sorted(current_members)}")
+            self.logger.debug(f"  Expected: {sorted(expected_users)}")
             
             # Find orphaned users (in cost center but not in expected team members)
             expected_users_set = set(expected_users)
