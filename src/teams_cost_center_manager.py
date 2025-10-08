@@ -26,7 +26,6 @@ class TeamsCostCenterManager:
         self.teams_mode = config.teams_mode  # "auto" or "manual"
         self.organizations = config.teams_organizations
         self.auto_create = config.teams_auto_create
-        self.name_template = config.teams_name_template
         self.team_mappings = config.teams_mappings or {}
         
         # Cache for team data
@@ -145,20 +144,13 @@ class TeamsCostCenterManager:
                 return None
         
         elif self.teams_mode == "auto":
-            # Generate cost center name using template
-            try:
-                cost_center = self.name_template.format(
-                    team_name=team_name,
-                    team_slug=team_slug,
-                    org=org_or_enterprise
-                )
-            except KeyError as e:
-                self.logger.error(
-                    f"Invalid template variable in cost_center_name_template: {e}. "
-                    f"Available: team_name, team_slug, org"
-                )
-                # Fallback to simple naming
-                cost_center = f"Team: {team_name}"
+            # Generate cost center name based on scope and naming standards
+            if self.teams_scope == "enterprise":
+                # Enterprise team mode: [enterprise team] {team-name}
+                cost_center = f"[enterprise team] {team_name}"
+            else:
+                # Organization team mode: [org team] {org-name}/{team-name}
+                cost_center = f"[org team] {org_or_enterprise}/{team_name}"
         
         else:
             self.logger.error(f"Invalid teams mode: {self.teams_mode}. Must be 'auto' or 'manual'")

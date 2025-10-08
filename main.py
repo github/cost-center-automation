@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
 """
-Simplified GitHub Copilot Cost Center Management Script
+GitHub Copilot Cost Center Management Script
 
-This script manages GitHub Copilot license holders with a simple two-cost-center model:
-- no_prus_cost_center_id: Default for all users
-- prus_allowed_cost_center_id: Only for exception users listed in config
+Automates cost center assignments for GitHub Copilot users with two operational modes:
+
+1. PRU-Based Mode: Simple two-tier model based on Premium Request Unit exceptions
+   - Default cost center for all users
+   - Exception cost center for specified PRU-allowed users
+
+2. Teams-Based Mode: Assigns users based on GitHub team membership
+   - Organization scope: Sync teams from specific GitHub organizations
+   - Enterprise scope: Sync teams across the entire GitHub Enterprise
+   - Automatic cost center creation and naming
+   - Orphaned user detection and removal
 """
 
 import argparse
@@ -23,7 +31,22 @@ from src.logger_setup import setup_logging
 def parse_arguments():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="Simplified GitHub Copilot Cost Center Management"
+        description="GitHub Copilot Cost Center Management - PRU-based or Teams-based assignment",
+        epilog="""
+Examples:
+  # PRU-based mode (default)
+  %(prog)s --assign-cost-centers --mode plan
+  %(prog)s --assign-cost-centers --mode apply --yes
+  
+  # Teams-based mode (organization scope)
+  %(prog)s --teams-mode --assign-cost-centers --mode plan
+  %(prog)s --teams-mode --assign-cost-centers --mode apply --yes
+  
+  # View configuration
+  %(prog)s --show-config
+  %(prog)s --teams-mode --show-config
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
     
     # Action arguments
@@ -36,10 +59,8 @@ def parse_arguments():
     parser.add_argument(
         "--assign-cost-centers",
         action="store_true",
-        help="Compute (and optionally apply) cost center assignments using simplified PRUs model"
+        help="Assign users to cost centers (use with --mode plan/apply)"
     )
-    
-
     
     parser.add_argument(
         "--show-config",
@@ -50,19 +71,19 @@ def parse_arguments():
     parser.add_argument(
         "--create-cost-centers",
         action="store_true",
-        help="Create cost centers if they don't exist (enterprise only)"
+        help="Create cost centers if they don't exist (PRU mode only)"
     )
     
     parser.add_argument(
         "--incremental",
         action="store_true",
-        help="Only process users added since last run (ideal for cron jobs)"
+        help="Only process users added since last run (PRU mode only, ideal for cron jobs)"
     )
     
     parser.add_argument(
         "--teams-mode",
         action="store_true",
-        help="Use teams-based cost center assignment instead of PRU-based logic"
+        help="Enable teams-based assignment (alternative to PRU-based mode)"
     )
     
     # Mode replaces --dry-run and --sync-cost-centers separation
@@ -131,7 +152,10 @@ def _handle_teams_mode(args, config: ConfigManager, teams_manager, logger) -> No
     print(f"Remove orphaned users: {config.teams_remove_orphaned_users}")
     
     if config.teams_mode == "auto":
-        print(f"Cost center naming template: {config.teams_name_template}")
+        if teams_scope == "enterprise":
+            print(f"Cost center naming: [enterprise team] {{team-name}}")
+        else:
+            print(f"Cost center naming: [org team] {{org-name}}/{{team-name}}")
     elif config.teams_mode == "manual":
         print(f"Manual mappings configured: {len(config.teams_mappings)}")
         for team_key, cost_center in config.teams_mappings.items():
@@ -323,9 +347,8 @@ def main():
         
         logger.info("Configuration loaded successfully")
         
-        # Initialize managers
+        # Initialize GitHub manager
         github_manager = GitHubCopilotManager(config)
-        cost_center_manager = CostCenterManager(config, auto_create_enabled=args.create_cost_centers)
         
         # Check if teams mode is enabled (via flag or config)
         teams_mode_enabled = args.teams_mode or config.teams_enabled
@@ -363,6 +386,9 @@ def main():
             return _handle_teams_mode(args, config, teams_manager, logger)
         
         # ===== Standard PRU-based mode continues below =====
+        
+        # Initialize cost center manager for PRU-based mode
+        cost_center_manager = CostCenterManager(config, auto_create_enabled=args.create_cost_centers)
         
         # Always show configuration at the beginning of every run
         print("\n===== Current Configuration =====")
