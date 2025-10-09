@@ -3,6 +3,7 @@ GitHub API Manager for Copilot license operations.
 """
 
 import logging
+import re
 import time
 from typing import Dict, List, Optional
 from datetime import datetime
@@ -46,7 +47,7 @@ class GitHubCopilotManager:
         session.headers.update({
             "Authorization": f"token {self.config.github_token}",
             "Accept": "application/vnd.github+json",
-            "User-Agent": "Copilot-Cost-Center-Manager",
+            "User-Agent": "cost-center-automation",
             "X-GitHub-Api-Version": "2022-11-28"
         })
         
@@ -185,6 +186,8 @@ class GitHubCopilotManager:
     def add_users_to_cost_center(self, cost_center_id: str, usernames: List[str]) -> Dict[str, bool]:
         """Add multiple users (up to 50) to a specific cost center.
         
+        Only adds users who are not already in the cost center to avoid unnecessary API calls.
+        
         Returns:
             Dict mapping username -> success status for detailed logging
         """
@@ -195,11 +198,30 @@ class GitHubCopilotManager:
         if len(usernames) > 50:
             self.logger.error(f"Cannot add more than 50 users at once. Got {len(usernames)} users.")
             return {username: False for username in usernames}
+        
+        # Get current members to avoid re-adding users who are already assigned
+        current_members = self.get_cost_center_members(cost_center_id)
+        current_members_set = set(current_members)
+        
+        # Filter to only users who need to be added
+        users_to_add = [u for u in usernames if u not in current_members_set]
+        users_already_assigned = [u for u in usernames if u in current_members_set]
+        
+        # Log users who are already assigned
+        if users_already_assigned:
+            self.logger.debug(f"Skipping {len(users_already_assigned)} users already in cost center {cost_center_id}: {users_already_assigned}")
+        
+        # If no users need to be added, return success for all
+        if not users_to_add:
+            self.logger.info(f"All {len(usernames)} users already assigned to cost center {cost_center_id}")
+            return {username: True for username in usernames}
+        
+        self.logger.info(f"Adding {len(users_to_add)} new users to cost center {cost_center_id} (skipping {len(users_already_assigned)} already assigned)")
             
         url = f"{self.base_url}/enterprises/{self.enterprise_name}/settings/billing/cost-centers/{cost_center_id}/resource"
         
         payload = {
-            "users": usernames
+            "users": users_to_add  # Only send users who need to be added
         }
         
         # Set proper headers including API version
@@ -221,21 +243,30 @@ class GitHubCopilotManager:
                 return self.add_users_to_cost_center(cost_center_id, usernames)
             
             if response.status_code in [200, 201, 204]:
-                self.logger.info(f"✅ Successfully assigned {len(usernames)} users to cost center {cost_center_id}")
-                for username in usernames:
+                self.logger.info(f"✅ Successfully added {len(users_to_add)} users to cost center {cost_center_id}")
+                
+                for username in users_to_add:
                     self.logger.info(f"   ✅ {username} → {cost_center_id}")
+                
+                # Return success for all users (both added and already assigned)
                 return {username: True for username in usernames}
             else:
-                self.logger.error(f"❌ Failed to assign users to cost center {cost_center_id}: {response.status_code} {response.text}")
-                for username in usernames:
+                self.logger.error(f"❌ Failed to add users to cost center {cost_center_id}: {response.status_code} {response.text}")
+                for username in users_to_add:
                     self.logger.error(f"   ❌ {username} → {cost_center_id} (API Error)")
-                return {username: False for username in usernames}
+                # Failed users get False, already assigned users get True
+                results = {username: False for username in users_to_add}
+                results.update({username: True for username in users_already_assigned})
+                return results
                 
         except requests.exceptions.RequestException as e:
-            self.logger.error(f"❌ Error assigning users to cost center {cost_center_id}: {str(e)}")
-            for username in usernames:
+            self.logger.error(f"❌ Error adding users to cost center {cost_center_id}: {str(e)}")
+            for username in users_to_add:
                 self.logger.error(f"   ❌ {username} → {cost_center_id} (Network Error)")
-            return {username: False for username in usernames}
+            # Failed users get False, already assigned users get True
+            results = {username: False for username in users_to_add}
+            results.update({username: True for username in users_already_assigned})
+            return results
 
     def bulk_update_cost_center_assignments(self, cost_center_assignments: Dict[str, List[str]]) -> Dict[str, Dict[str, bool]]:
         """
@@ -298,6 +329,208 @@ class GitHubCopilotManager:
         url = f"{self.base_url}/rate_limit"
         return self._make_request(url)
     
+    def list_org_teams(self, org: str) -> List[Dict]:
+        """
+        List all teams in an organization.
+        
+        Args:
+            org: Organization name
+            
+        Returns:
+            List of team dictionaries with id, name, slug, description, etc.
+        """
+        self.logger.info(f"Fetching teams for organization: {org}")
+        url = f"{self.base_url}/orgs/{org}/teams"
+        
+        all_teams = []
+        page = 1
+        per_page = 100
+        
+        while True:
+            params = {"page": page, "per_page": per_page}
+            
+            try:
+                response_data = self._make_request(url, params)
+                
+                # Response is a list directly for teams endpoint
+                if not isinstance(response_data, list):
+                    self.logger.error(f"Unexpected response format for teams: {type(response_data)}")
+                    break
+                
+                teams = response_data
+                if not teams:
+                    break
+                
+                all_teams.extend(teams)
+                self.logger.info(f"Fetched page {page} with {len(teams)} teams")
+                
+                page += 1
+                
+                # Check if we have more pages
+                if len(teams) < per_page:
+                    break
+                    
+            except requests.exceptions.RequestException as e:
+                self.logger.error(f"Failed to fetch teams for org {org}: {str(e)}")
+                break
+        
+        self.logger.info(f"Total teams found in {org}: {len(all_teams)}")
+        return all_teams
+    
+    def get_team_members(self, org: str, team_slug: str) -> List[Dict]:
+        """
+        Get all members of a specific team.
+        
+        Args:
+            org: Organization name
+            team_slug: Team slug (URL-friendly team name)
+            
+        Returns:
+            List of team member dictionaries with login, id, name, etc.
+        """
+        self.logger.debug(f"Fetching members for team: {org}/{team_slug}")
+        url = f"{self.base_url}/orgs/{org}/teams/{team_slug}/members"
+        
+        all_members = []
+        page = 1
+        per_page = 100
+        
+        while True:
+            params = {"page": page, "per_page": per_page}
+            
+            try:
+                response_data = self._make_request(url, params)
+                
+                # Response is a list directly for members endpoint
+                if not isinstance(response_data, list):
+                    self.logger.error(f"Unexpected response format for team members: {type(response_data)}")
+                    break
+                
+                members = response_data
+                if not members:
+                    break
+                
+                all_members.extend(members)
+                self.logger.debug(f"Fetched page {page} with {len(members)} members for {org}/{team_slug}")
+                
+                page += 1
+                
+                # Check if we have more pages
+                if len(members) < per_page:
+                    break
+                    
+            except requests.exceptions.RequestException as e:
+                self.logger.warning(f"Failed to fetch members for team {org}/{team_slug}: {str(e)}")
+                break
+        
+        self.logger.info(f"Total members found in {org}/{team_slug}: {len(all_members)}")
+        return all_members
+    
+    def list_enterprise_teams(self) -> List[Dict]:
+        """
+        List all teams in the enterprise.
+        
+        Returns:
+            List of team dictionaries with id, name, slug, description, etc.
+        """
+        if not self.use_enterprise or not self.enterprise_name:
+            self.logger.error("Enterprise name required for listing enterprise teams")
+            return []
+        
+        self.logger.info(f"Fetching enterprise teams for: {self.enterprise_name}")
+        url = f"{self.base_url}/enterprises/{self.enterprise_name}/teams"
+        
+        all_teams = []
+        page = 1
+        per_page = 100
+        
+        while True:
+            params = {"page": page, "per_page": per_page}
+            
+            try:
+                response_data = self._make_request(url, params)
+                
+                # Response is a list directly for teams endpoint
+                if not isinstance(response_data, list):
+                    self.logger.error(f"Unexpected response format for enterprise teams: {type(response_data)}")
+                    break
+                
+                teams = response_data
+                if not teams:
+                    break
+                
+                all_teams.extend(teams)
+                self.logger.info(f"Fetched page {page} with {len(teams)} enterprise teams")
+                
+                page += 1
+                
+                # Check if we have more pages
+                if len(teams) < per_page:
+                    break
+                    
+            except requests.exceptions.RequestException as e:
+                self.logger.error(f"Failed to fetch enterprise teams: {str(e)}")
+                break
+        
+        self.logger.info(f"Total enterprise teams found: {len(all_teams)}")
+        return all_teams
+    
+    def get_enterprise_team_members(self, team_slug: str) -> List[Dict]:
+        """
+        Get all members of a specific enterprise team.
+        
+        Args:
+            team_slug: Team slug (URL-friendly team name)
+            
+        Returns:
+            List of team member dictionaries with login, id, name, etc.
+        """
+        if not self.use_enterprise or not self.enterprise_name:
+            self.logger.error("Enterprise name required for fetching enterprise team members")
+            return []
+        
+        self.logger.debug(f"Fetching members for enterprise team: {team_slug}")
+        url = f"{self.base_url}/enterprises/{self.enterprise_name}/teams/{team_slug}/memberships"
+        
+        all_members = []
+        page = 1
+        per_page = 100
+        
+        while True:
+            params = {"page": page, "per_page": per_page}
+            
+            try:
+                response_data = self._make_request(url, params)
+                
+                # Response is a list directly for memberships endpoint
+                if not isinstance(response_data, list):
+                    self.logger.error(f"Unexpected response format for enterprise team members: {type(response_data)}")
+                    self.logger.debug(f"Response data: {response_data}")
+                    break
+                
+                members = response_data
+                if not members:
+                    break
+                
+                # Enterprise teams memberships endpoint returns user objects directly (not wrapped)
+                # Just add them all to our list
+                all_members.extend(members)
+                
+                self.logger.debug(f"Fetched page {page} with {len(members)} members for enterprise team {team_slug}")
+                
+                page += 1
+                
+                # Check if we have more pages
+                if len(members) < per_page:
+                    break
+                    
+            except requests.exceptions.RequestException as e:
+                self.logger.warning(f"Failed to fetch members for enterprise team {team_slug}: {str(e)}")
+                break
+        
+        self.logger.info(f"Total members found in enterprise team {team_slug}: {len(all_members)}")
+        return all_members
+    
     def create_cost_center(self, name: str) -> Optional[str]:
         """
         Create a new cost center in the enterprise.
@@ -342,9 +575,29 @@ class GitHubCopilotManager:
                 self.logger.info(f"Successfully created cost center '{name}' with ID: {cost_center_id}")
                 return cost_center_id
             elif response.status_code == 409:
-                # Cost center already exists, find it by name
-                self.logger.info(f"Cost center '{name}' already exists, finding existing ID...")
-                return self._find_cost_center_by_name(name)
+                # Cost center already exists - try to extract UUID from error message first
+                self.logger.info(f"Cost center '{name}' already exists, extracting existing ID...")
+                
+                try:
+                    response_data = response.json()
+                    error_message = response_data.get('message', '')
+                    
+                    # Try to extract UUID from message: "...existing cost center UUID: <uuid>..."
+                    uuid_pattern = r'existing cost center UUID:\s*([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'
+                    match = re.search(uuid_pattern, error_message, re.IGNORECASE)
+                    
+                    if match:
+                        cost_center_id = match.group(1)
+                        self.logger.info(f"Extracted existing cost center ID from API response: {cost_center_id}")
+                        return cost_center_id
+                    else:
+                        self.logger.warning(f"Could not extract UUID from 409 response message: {error_message}")
+                        self.logger.info("Falling back to name search to find existing cost center...")
+                        return self._find_cost_center_by_name(name)
+                        
+                except (ValueError, KeyError) as e:
+                    self.logger.warning(f"Could not parse 409 response: {str(e)}, falling back to name search...")
+                    return self._find_cost_center_by_name(name)
             else:
                 self.logger.error(f"Failed to create cost center '{name}': {response.status_code} {response.text}")
                 return None
@@ -440,3 +693,97 @@ class GitHubCopilotManager:
         
         self.logger.info(f"Cost centers ready - No PRU: {no_pru_id}, PRU Allowed: {pru_allowed_id}")
         return result
+    
+    def get_cost_center_members(self, cost_center_id: str) -> List[str]:
+        """
+        Get all members (usernames) currently assigned to a cost center.
+        
+        Args:
+            cost_center_id: The ID of the cost center
+            
+        Returns:
+            List of usernames currently in the cost center
+        """
+        if not self.use_enterprise or not self.enterprise_name:
+            self.logger.error("Cost center operations only available for GitHub Enterprise")
+            return []
+        
+        url = f"{self.base_url}/enterprises/{self.enterprise_name}/settings/billing/cost-centers/{cost_center_id}"
+        
+        try:
+            response_data = self._make_request(url)
+            
+            # The response contains a resources array with type and name fields
+            resources = response_data.get('resources', [])
+            usernames = []
+            
+            for resource in resources:
+                # Each resource has 'type' (e.g., "User") and 'name' (username)
+                if resource.get('type') == 'User':
+                    username = resource.get('name')
+                    if username:
+                        usernames.append(username)
+            
+            self.logger.debug(f"Cost center {cost_center_id} has {len(usernames)} members")
+            return usernames
+            
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Failed to get members for cost center {cost_center_id}: {str(e)}")
+            return []
+    
+    def remove_users_from_cost_center(self, cost_center_id: str, usernames: List[str]) -> Dict[str, bool]:
+        """
+        Remove multiple users from a specific cost center.
+        
+        Args:
+            cost_center_id: The ID of the cost center
+            usernames: List of usernames to remove
+            
+        Returns:
+            Dict mapping username -> success status
+        """
+        if not self.use_enterprise or not self.enterprise_name:
+            self.logger.error("Cost center operations only available for GitHub Enterprise")
+            return {user: False for user in usernames}
+        
+        if not usernames:
+            return {}
+        
+        url = f"{self.base_url}/enterprises/{self.enterprise_name}/settings/billing/cost-centers/{cost_center_id}/resource"
+        
+        payload = {
+            "users": usernames
+        }
+        
+        headers = {
+            "accept": "application/vnd.github+json",
+            "x-github-api-version": "2022-11-28",
+            "content-type": "application/json"
+        }
+        
+        try:
+            response = self.session.delete(url, json=payload, headers=headers)
+            
+            # Handle rate limiting
+            if response.status_code == 429:
+                reset_time = int(response.headers.get('X-RateLimit-Reset', time.time() + 60))
+                wait_time = reset_time - int(time.time()) + 1
+                self.logger.warning(f"Rate limit hit. Waiting {wait_time} seconds...")
+                time.sleep(wait_time)
+                return self.remove_users_from_cost_center(cost_center_id, usernames)
+            
+            if response.status_code in [200, 204]:
+                self.logger.info(f"✅ Successfully removed {len(usernames)} users from cost center {cost_center_id}")
+                for username in usernames:
+                    self.logger.info(f"   ✅ {username} removed from {cost_center_id}")
+                return {user: True for user in usernames}
+            else:
+                self.logger.error(
+                    f"Failed to remove users from cost center {cost_center_id}: "
+                    f"{response.status_code} {response.text}"
+                )
+                return {user: False for user in usernames}
+                
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Error removing users from cost center {cost_center_id}: {str(e)}")
+            return {user: False for user in usernames}

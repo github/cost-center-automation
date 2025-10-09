@@ -1,444 +1,346 @@
-# GitHub cost center automation
+# GitHub Copilot Cost Center Automation
 
-This template repository provides scaffolding for cost center automation. In its initial version, the utility allows for auto-assignment of all Copilot-licensed users in a given enterprise to a cost center. Additional automation use cases will be added.
+Automate GitHub Copilot license cost center assignments for your enterprise with two powerful modes:
 
-## 🚀 Quick start guide
+- **PRU-Based Mode**: Simple two-tier model (PRU overages allowed/not allowed)
+- **Teams-Based Mode**: Automatic assignment based on GitHub team membership
 
-### Option A: GitHub Actions (Recommended)
+## 🚀 Quick Start (5 minutes)
 
-1. **Create a new repository from this template** in your GitHub Enterprise organization:
-   - Click the green `Use this template` button at the top of this repository.
-   - Fill in the repository details and create your own copy.
+### 1. Create Your Token
 
-2. **Add your GitHub token as a repository secret**:
-   - Go to your new repository's **Settings** → **Secrets and variables** → **Actions**
-   - Add secret: `COST_CENTER_AUTOMATION_TOKEN` (your GitHub Personal Access Token with `manage_billing:enterprise` scope)
+Create a GitHub Personal Access Token with these scopes:
+- `manage_billing:enterprise` (required)
+- `read:org` (required for Teams Mode)
 
-3. **Run the workflow**:
-   - Go to the **Actions** tab → "Cost center automation"
-   - Click "Run workflow" → Select "incremental" mode → Run
+[→ Create token here](https://github.com/settings/tokens/new)
 
-4. **Done!** The workflow automatically:
-   - Detects your enterprise
-   - Creates cost centers if needed ("00 - No PRU overages", "01 - PRU overages allowed")
-   - Assigns all Copilot users to appropriate cost centers
-   - Runs every 6 hours automatically
+### 2. Choose Your Mode
 
-### Option B: Local Execution
+<details>
+<summary><b>PRU-Based Mode</b> (Simple two-tier model)</summary>
 
-1. **Clone and setup**:
-   ```bash
-   git clone <your-repo-url>
-   cd populate_cost_centers
-   pip install -r requirements.txt
-   ```
+```bash
+# Clone and setup
+git clone <your-repo-url>
+cd cost-center-automation
+pip install -r requirements.txt
 
-2. **Configure**:
-   ```bash
-   cp config/config.example.yaml config/config.yaml
-   echo "GITHUB_TOKEN=your_github_token_here" > .env
-   # Edit config/config.yaml - set your enterprise name (or leave auto-detection)
-   ```
+# Configure
+export GITHUB_TOKEN="your_token_here"
+export GITHUB_ENTERPRISE="your-enterprise"
 
-3. **Run**:
-   ```bash
-   # Create cost centers and assign users (with confirmation)
-   python main.py --create-cost-centers --assign-cost-centers --mode apply
-   ```
+# Run (creates cost centers automatically)
+python main.py --create-cost-centers --assign-cost-centers --mode apply --yes
+```
 
-That's it! Your Copilot users are now organized in cost centers for better billing tracking.
+**Done!** All users are now in "00 - No PRU overages" cost center.
 
-## Overview
+To allow specific users PRU overages, edit `config/config.yaml`:
+```yaml
+cost_centers:
+  prus_exception_users:
+    - "alice"
+    - "bob"
+```
 
-Automates GitHub Copilot license cost center assignments for enterprises using a simple two-tier model:
-- **Default**: All Copilot users are added to `00 - No PRU overages` cost center
-- **Exceptions**: Specified users are added to `01 - PRU overages allowed` cost center
+</details>
 
-Supports both interactive execution and automated scheduling with incremental processing.
+<details>
+<summary><b>Teams-Based Mode</b> (Sync with GitHub teams)</summary>
+
+```bash
+# Clone and setup
+git clone <your-repo-url>
+cd cost-center-automation
+pip install -r requirements.txt
+
+# Configure
+cp config/config.example.yaml config/config.yaml
+export GITHUB_TOKEN="your_token_here"
+export GITHUB_ENTERPRISE="your-enterprise"
+
+# Edit config/config.yaml
+teams:
+  enabled: true
+  scope: "organization"  # or "enterprise"
+  organizations:
+    - "your-org-name"
+
+# Run
+python main.py --teams-mode --assign-cost-centers --mode apply --yes
+```
+
+**Done!** Cost centers created for each team, users automatically assigned.
+
+See [TEAMS_QUICKSTART.md](TEAMS_QUICKSTART.md) for more details.
+
+</details>
+
+### 3. Automate (Optional)
+
+Set up GitHub Actions for automatic syncing every 6 hours - see [Automation](#automation) below.
 
 ## Features
 
-- **Automatic cost center creation**: Creates cost centers automatically (or use existing cost centers, if preferred)
-- **Incremental processing**: Only process users added since last run (perfect for cron jobs)
-- **Enhanced result logging**: Real-time success/failure tracking with user-level detail
-- Plan vs apply execution (`--mode plan|apply`) + interactive safety prompt (bypass with `--yes`)
-- Container friendly (Dockerfile + docker-compose)
-- GitHub Actions & cron automation examples
+### Two Operational Modes
+
+**PRU-Based Mode** (Default)
+- Simple two-tier model: PRU overages allowed/not allowed
+- Automatic cost center creation with default names
+- Exception list for users who need PRU access
+- Incremental processing support (only new users)
+
+**Teams-Based Mode**
+- Organization scope: Sync teams from specific GitHub orgs
+- Enterprise scope: Sync all teams across the enterprise
+- Automatic cost center creation with bracket notation naming
+- Orphaned user detection and removal
+- Single assignment (multi-team users get last team's assignment)
+
+### Additional Features
+- 🔄 **Plan/Apply execution**: Preview changes before applying
+- 📊 **Enhanced logging**: Real-time success/failure tracking
+- 🐳 **Container ready**: Dockerfile and docker-compose included
+- ⚙️ **Automation examples**: GitHub Actions, cron, and shell scripts
+- 🔧 **Auto-creation**: Automatic cost center creation (no manual UI setup)
 
 ## Prerequisites
 
-- GitHub Enterprise Cloud admin access
-- GitHub Personal Access Token with `manage_billing:enterprise` scope
-
-**Additional requirements for local execution:**
-- Python 3.8 or higher
-
-## Installation
-
-1. Clone or download your repository created from this template
-2. Install required dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. Copy the example configuration:
-   ```bash
-   cp config/config.example.yaml config/config.yaml
-   ```
-
-4. Set up your GitHub token:
-   ```bash
-   echo "GITHUB_TOKEN=your_actual_token_here" > .env
-   ```
-
-5. Edit `config/config.yaml` with your:
-   - GitHub Enterprise name
-   - Cost center IDs (if they exist) OR enable auto-creation
-   - Any users which should get access to additional PRUs
+- GitHub Enterprise Cloud with admin access
+- GitHub Personal Access Token with scopes:
+  - `manage_billing:enterprise` (required for all modes)
+  - `read:org` (required for Teams Mode)
+- Python 3.8+ (for local execution)
 
 ## Configuration
 
-All configuration lives in: `config/config.yaml` (example below) 
+Configuration lives in `config/config.yaml` (copy from `config/config.example.yaml`).
 
-### Core Keys
+### PRU-Based Mode Configuration
+
 ```yaml
 github:
-  # GitHub Enterprise name (required)
-  enterprise: "your_enterprise_name"
+  enterprise: ""  # Or set via GITHUB_ENTERPRISE env var
 
 cost_centers:
-  # Manual cost center IDs (only needed when auto_create is false)
-  no_prus_cost_center_id: "REPLACE_WITH_NO_PRUS_COST_CENTER_ID"
-  prus_allowed_cost_center_id: "REPLACE_WITH_PRUS_ALLOWED_COST_CENTER_ID"
+  auto_create: true  # Automatically create cost centers
+  no_prus_cost_center_name: "00 - No PRU overages"
+  prus_allowed_cost_center_name: "01 - PRU overages allowed"
   
-  # Users who should get access to PRU overages (always required)
+  # Users who need PRU access
   prus_exception_users:
-    # - "alice"
-    # - "bob"
-  
-  # Auto-creation settings (creates cost centers if they don't exist)
-  auto_create: false  # Set to true to enable auto-creation
-  
-  # Cost center names (only used when auto_create is true)
-  no_prus_cost_center_name: "00 - No PRU overages"  # Name for no-PRU cost center
-  prus_allowed_cost_center_name: "01 - PRU overages allowed"  # Name for PRU-allowed cost center
-
-logging:
-  level: "INFO"
-  file: "logs/populate_cost_centers.log"
+    - "alice"
+    - "bob"
 ```
 
-### Placeholder Warnings
-If either cost center ID still equals `REPLACE_WITH_*` (or the sample defaults) a WARNING is logged. In plan mode this is informational; in apply mode you should fix values before proceeding.
+### Teams-Based Mode Configuration
 
-### User Assignment Logic
-- Default: everyone → `no_prus_cost_center_id`
-- If username in `prus_exception_users` → `prus_allowed_cost_center_id`
-
-### Environment Variables (override config)
-- `GITHUB_TOKEN`
-- `GITHUB_ENTERPRISE`
-
-### Duplicate Seat Handling
-If the Copilot seat API returns the same user more than once, duplicates are skipped and summarized in a warning.
-
-## Cost Center Auto-Creation
-
-This tool can automatically create cost centers if they don't exist, eliminating manual GitHub UI setup:
-
-### Quick Start with Auto-Creation
-
-```bash
-# Plan what cost centers would be created
-python main.py --create-cost-centers --show-config
-
-# Create cost centers and assign users (with confirmation prompt)
-python main.py --create-cost-centers --assign-cost-centers --mode apply
-
-# Non-interactive creation for automation
-python main.py --create-cost-centers --assign-cost-centers --mode apply --yes
-```
-
-### Default Cost Center Names
-- **`"00 - No PRU overages"`** - For users without PRU access (majority)
-- **`"01 - PRU overages allowed"`** - For exception users with PRU access
-
-### Configuration Options
-
-**Enable via config file:**
 ```yaml
-cost_centers:
-  auto_create: true  # Enable automatic creation
-  no_prus_cost_center_name: "Custom No PRU Name"  # Optional: customize names
-  prus_allowed_cost_center_name: "Custom PRU Name"
+teams:
+  enabled: true
+  scope: "organization"  # or "enterprise"
+  mode: "auto"  # One cost center per team
+  
+  organizations:  # Only for organization scope
+    - "your-org"
+  
+  auto_create_cost_centers: true
+  remove_orphaned_users: true
 ```
 
-**Or use command line flag:** `--create-cost-centers`
+**Cost Center Naming:**
+- Organization scope: `[org team] {org-name}/{team-name}`
+- Enterprise scope: `[enterprise team] {team-name}`
 
-### How It Works
-1. **Detection**: Checks if cost centers with specified names already exist
-2. **Creation**: Creates missing cost centers via GitHub Enterprise API
-3. **Assignment**: Uses the created cost center IDs for user assignments
-4. **Idempotent**: Safe to run multiple times - won't create duplicates
+### Environment Variables
+
+Set these instead of config file values:
+- `GITHUB_TOKEN` (required)
+- `GITHUB_ENTERPRISE` (required)
+
+## Teams Mode Details
+
+For complete Teams Mode documentation, see:
+- [TEAMS_QUICKSTART.md](TEAMS_QUICKSTART.md) - Step-by-step setup guide
+- [TEAMS_INTEGRATION.md](TEAMS_INTEGRATION.md) - Full reference documentation
+
+### Key Concepts
+
+**Organization vs Enterprise Scope**
+- **Organization**: Syncs teams from specific GitHub organizations you specify
+- **Enterprise**: Syncs all teams across your entire GitHub Enterprise
+
+**Cost Center Naming**
+- Organization scope: `[org team] {org-name}/{team-name}`
+- Enterprise scope: `[enterprise team] {team-name}`
+
+**Multi-Team Users**
+- Each user can only belong to ONE cost center
+- Multi-team users are assigned to their last team's cost center
+- Warnings logged for review before applying
+
+### Manual Mode
+
+For advanced use cases, map specific teams to specific cost centers:
+
+```yaml
+teams:
+  mode: "manual"
+  team_mappings:
+    "my-org/frontend": "Engineering: Frontend"
+    "my-org/backend": "Engineering: Backend"
+```
 
 ## Usage
 
-### Basic Usage
+### Common Commands
 
 ```bash
-# Show current configuration and PRUs exception users
+# View configuration
 python main.py --show-config
+python main.py --teams-mode --show-config
 
-# List all Copilot license holders (shows PRUs exceptions)
+# List all Copilot users
 python main.py --list-users
+```
 
-# Plan cost center assignments (no changes made)
+### PRU-Based Mode
+
+```bash
+# Plan assignments (preview, no changes)
 python main.py --assign-cost-centers --mode plan
 
-# Apply cost center assignments (will prompt for confirmation)
+# Apply assignments (with confirmation)
 python main.py --assign-cost-centers --mode apply
-```
 
-### Additional Examples
-
-```bash
-# Apply without interactive confirmation (for automation)
-python main.py --assign-cost-centers --mode apply --yes
-
-# Generate summary report (plan mode by default)
-python main.py --assign-cost-centers --summary-report
-
-# Process only specific users (plan)
-python main.py --users user1,user2,user3 --assign-cost-centers --mode plan
-
-# Auto-create cost centers and assign users (with confirmation)
-python main.py --create-cost-centers --assign-cost-centers --mode apply
-
-# Auto-create and assign (non-interactive)
+# Apply without confirmation (automation)
 python main.py --create-cost-centers --assign-cost-centers --mode apply --yes
 
-# Incremental processing - only process users added since last run (ideal for cron jobs)
+# Incremental mode (only new users, for cron jobs)
 python main.py --assign-cost-centers --incremental --mode apply --yes
-
-# Plan mode with incremental processing (see what new users would be processed)
-python main.py --assign-cost-centers --incremental --mode plan
-
-# Full cron job setup: incremental processing with detailed logging and reports
-python main.py --assign-cost-centers --incremental --mode apply --yes --summary-report
 ```
 
-## Incremental Processing
-
-For efficient cron job automation, the `--incremental` flag processes only users added since the last successful run:
-
-### How it Works
-
-1. **First Run**: Processes all users and saves timestamp to `exports/.last_run_timestamp`
-2. **Subsequent Runs**: Only processes users with `created_at` timestamp after the last run
-3. **No New Users**: Exits quickly with "No new users found since last run"
-4. **Timestamp Updates**: Only saved on successful `--mode apply` executions
-
-### Automation Script
-
-The included automation script defaults to incremental mode:
+### Teams-Based Mode
 
 ```bash
-# Incremental mode (default - recommended for cron jobs)
-./automation/update_cost_centers.sh
+# Plan assignments (preview, no changes)
+python main.py --teams-mode --assign-cost-centers --mode plan
 
-# Full mode (processes all users)
-./automation/update_cost_centers.sh full
+# Apply assignments (with confirmation)
+python main.py --teams-mode --assign-cost-centers --mode apply
+
+# Apply without confirmation (automation)
+python main.py --teams-mode --assign-cost-centers --mode apply --yes
+
+# Generate summary report
+python main.py --teams-mode --summary-report
 ```
 
-## Enhanced Result Logging
+**Note:** Incremental mode is NOT supported in Teams Mode. All team members are processed every run.
 
-The tool provides **real-time detailed logging** showing actual assignment results:
+## Incremental Processing (PRU Mode Only)
 
-### What You Get
+Process only users added since the last run - perfect for cron jobs:
 
-- **✅ Individual User Success**: `✅ username → cost_center_id`
-- **❌ Individual User Failures**: `❌ username → cost_center_id (API Error)`
-- **📊 Batch Progress**: `Batch 1 completed: 5 successful, 0 failed`
-- **📈 Final Results**: `📊 ASSIGNMENT RESULTS: 95/100 users successfully assigned`
-- **🎯 Success Summary**: `✅ Assignment success rate: 95/100 users`
+```bash
+# First run: processes all users, saves timestamp
+python main.py --assign-cost-centers --incremental --mode apply --yes
 
-### Example Output
+# Subsequent runs: only new users
+python main.py --assign-cost-centers --incremental --mode apply --yes
+```
+
+**Note:** Teams Mode does not support incremental processing.
+
+## Logging
+
+Logs are written to `logs/populate_cost_centers.log` with detailed tracking:
 
 ```log
-2025-09-24 10:39:06 [INFO] src.github_api: ✅ Successfully assigned 3 users to cost center abc123
-2025-09-24 10:39:06 [INFO] src.github_api:    ✅ user1 → abc123
-2025-09-24 10:39:06 [INFO] src.github_api:    ✅ user2 → abc123  
-2025-09-24 10:39:06 [INFO] src.github_api:    ✅ user3 → abc123
-2025-09-24 10:39:06 [INFO] src.github_api: 📊 ASSIGNMENT RESULTS: 3/3 users successfully assigned
-2025-09-24 10:39:06 [INFO] src.github_api: 🎉 All users successfully assigned!
+2025-10-08 10:39:06 [INFO] ✅ Successfully added 3 users to cost center abc123
+2025-10-08 10:39:06 [INFO]    ✅ user1 → abc123
+2025-10-08 10:39:06 [INFO]    ✅ user2 → abc123  
+2025-10-08 10:39:06 [INFO] 📊 ASSIGNMENT RESULTS: 3/3 users successfully assigned
 ```
-
-## Output Files
-
-Generated files include timestamp for traceability:
-
-- `logs/populate_cost_centers.log` – Detailed execution log with enhanced result tracking
-- `exports/.last_run_timestamp` – Timestamp for incremental processing (JSON format)
-
-### Log File Features
-
-- **Rotating logs** to prevent disk space issues
-- **Structured format** with timestamps and log levels
-- **Enhanced result tracking** with individual user success/failure details
-- **API response logging** for troubleshooting
-- **Performance metrics** and execution summaries
-
-## Configuration Files
-
-- `config/config.yaml` - Single configuration file containing all settings (GitHub API, cost centers, logging)
-- `config/config.example.yaml` - Example template to copy from
-- `.env` - Environment variables (GitHub token, optional overrides)
 
 ## Automation
 
+### GitHub Actions (Recommended)
+
+The included workflow automatically syncs cost centers every 6 hours:
+
+1. Add token as secret: `COST_CENTER_AUTOMATION_TOKEN`
+2. Go to **Actions** tab → "Cost center automation"
+3. Click "Run workflow" → Select mode → Run
+
+See `.github/workflows/` for configuration.
+
 ### Docker
+
 ```bash
-# Build image
+# Build and run
 docker build -t copilot-cc .
-
-# Plan mode
 docker run --rm -e GITHUB_TOKEN=$GITHUB_TOKEN copilot-cc \
-  python main.py --assign-cost-centers --mode plan --summary-report
-
-# Apply with auto-creation
-docker run --rm -e GITHUB_TOKEN=$GITHUB_TOKEN copilot-cc \
-  python main.py --create-cost-centers --assign-cost-centers --mode apply --yes --verbose
+  python main.py --assign-cost-centers --mode apply --yes
 
 # Background service
 docker compose up -d --build
 ```
 
-### GitHub Actions
-```yaml
-# Incremental processing (recommended for scheduled workflows)
-- name: Apply cost centers (incremental)
-  run: |
-    python main.py --assign-cost-centers --incremental --mode apply --yes --summary-report
-
-# Full processing (weekly/monthly)
-- name: Apply cost centers (full)
-  run: |
-    python main.py --assign-cost-centers --mode apply --yes --summary-report
-
-# Plan mode for validation
-- name: Plan cost center assignments
-  run: |
-    python main.py --assign-cost-centers --incremental --mode plan --summary-report
-```
-
-### Cron / Shell Script
-See `automation/update_cost_centers.sh` - uses incremental processing by default for efficient cron execution:
+### Cron Jobs
 
 ```bash
-# Incremental mode (default - processes only new users)
-./automation/update_cost_centers.sh
+# PRU mode with incremental processing (hourly)
+0 * * * * cd /path/to/repo && ./automation/update_cost_centers.sh
 
-# Full mode (processes all users)  
-./automation/update_cost_centers.sh full
+# Teams mode (weekly)
+0 2 * * 1 cd /path/to/repo && python main.py --teams-mode --assign-cost-centers --mode apply --yes
 ```
 
-The script includes detailed logging and `--summary-report` for comprehensive automation monitoring.
+See `automation/update_cost_centers.sh` for the included automation script.
 
-**Monitor execution:**
-```bash
-# View live logs
-tail -f logs/populate_cost_centers.log
+## Keeping Up-to-Date
 
-# Cron job examples
-0 * * * * cd /path/to/populate_cost_centers && ./automation/update_cost_centers.sh >/dev/null 2>&1  # Hourly incremental
-0 2 * * 0 cd /path/to/populate_cost_centers && ./automation/update_cost_centers.sh full >/dev/null 2>&1  # Weekly full
-```
+This repository includes automatic template sync from `github/cost-center-automation`.
 
-## Keeping up-to-date
+**Setup:**
+1. Create a PAT with `Contents: Write` and `Pull requests: Write`
+2. Add as secret: `TEMPLATE_SYNC_TOKEN`
+3. Automatic sync runs every Monday, creating PRs with updates
 
-This template includes a built-in **template sync workflow** that automatically keeps your repository updated with the latest improvements and fixes from the upstream template.
+**What's synced:** Code, workflows, docs, dependencies  
+**What's protected:** `config/config.yaml`, `.syncignore` files
 
-### How it works
-
-1. **Automatic Updates**: Every Monday at 06:00 UTC, the workflow checks for template updates
-2. **Smart Merging**: Only pulls changes that don't conflict with your customizations  
-3. **Protected Files**: Your configuration and custom files are never overwritten
-4. **Pull Request**: Creates a PR with changes for your review before applying
-
-### Setup (One-time)
-
-The template sync workflow is **automatically configured** and ready to use!
-
-**Required setup** (for most users):
-1. **Create a GitHub Personal Access Token**:
-   - Go to GitHub Settings → Developer settings → Personal access tokens → Fine-grained tokens
-   - Create token with these permissions:
-     - **Repository access**: Your consumer repository
-     - **Permissions**: `Contents: Write`, `Pull requests: Write`
-     - **Public repositories**: `Contents: Read` (to read the template)
-
-2. **Add the token as a repository secret**:
-   - Go to your repository's **Settings** → **Secrets and variables** → **Actions**
-   - Add secret: `TEMPLATE_SYNC_TOKEN` = your PAT
-
-**That's it!** The workflow will automatically sync from `github/cost-center-automation` every Monday.
-
-### What gets updated
-
-✅ **Always synced:**
-- Workflow improvements (`/.github/workflows/`)
-- Bug fixes and new features in source code
-- Documentation updates
-- Dependency updates
-
-🔒 **Never overwritten:**
-- `config/config.yaml` (your settings)
-- `.github/renovate.json` (custom Renovate config)
-- Any files listed in `.syncignore`
-
-### Manual sync
-
-Trigger an immediate sync check:
-- Go to **Actions** → "Sync from template" → "Run workflow"
-
-### Customize sync behavior
-
-Edit `.syncignore` to protect additional files from being overwritten:
-
-```bash
-# Add patterns for files you want to keep unchanged
-echo "my-custom-script.sh" >> .syncignore
-```
-
-### Disable auto-sync
-
-If you prefer manual updates only:
-- Delete `.github/workflows/template-sync.yml`
-- Or edit the workflow and remove the `schedule:` trigger
+Manual trigger: **Actions** → "Sync from template" → "Run workflow"
 
 ## Troubleshooting
 
-| Issue | Explanation | Action |
-|-------|-------------|--------|
-| Placeholder warning | Cost center ID not replaced | Edit `config/config.yaml` |
-| 401 / 403 errors | Token missing scope / expired | Regenerate PAT with required scopes |
-| No users returned | No active Copilot seats | Verify seat assignments in Enterprise settings |
-| Apply aborted | Confirmation not granted | Re-run with `--yes` or type `apply` at prompt |
-| Cost center creation failed | Missing enterprise permissions | Ensure token has `manage_billing:enterprise` scope |
+| Issue | Solution |
+|-------|----------|
+| 401/403 errors | Regenerate token with correct scopes |
+| No teams found | Verify `read:org` scope for Teams Mode |
+| Cost center creation fails | Ensure `manage_billing:enterprise` scope |
+| Multi-team user warnings | Review plan output, adjust team structure if needed |
 
-Logs: inspect `logs/populate_cost_centers.log` for detailed traces (DEBUG if `--verbose`).
+Check `logs/populate_cost_centers.log` for detailed traces. Use `--verbose` for DEBUG logging.
 
 ## Contributing
 
-1. Create your own repository from the template & branch (`feat/<name>`)
-2. Add/adjust tests (future enhancement: test harness TBD)
-3. Keep changeset focused & documented in commit message
-4. Submit PR with before/after summary
-5. Tag reviewers & link related issues
+1. Fork this repository and create a branch (`feat/<name>`)
+2. Make focused changes with clear commit messages
+3. Submit PR with description and link related issues
+
+## Additional Documentation
+
+- [TEAMS_QUICKSTART.md](TEAMS_QUICKSTART.md) - Teams Mode setup guide
+- [TEAMS_INTEGRATION.md](TEAMS_INTEGRATION.md) - Teams Mode reference
+- [ORPHANED_USERS_FEATURE.md](ORPHANED_USERS_FEATURE.md) - Orphaned users documentation
 
 ## License
 
-This project is licensed under the terms of the MIT open source license. Please refer to the [LICENSE](LICENSE) file for the full terms.
+This project is licensed under the MIT License. See [LICENSE](LICENSE) file for details.
 
 ---
-Maintained state: Tags `v0.1.0` (baseline refactor), `v0.1.1` (apply confirmation & flags). Latest: Enhanced result logging, incremental processing, automatic cost center creation.
+
+**Latest Features:** Teams-based assignment (organization & enterprise scope), orphaned user detection, bracket notation naming, enhanced logging, incremental processing
