@@ -95,7 +95,7 @@ Set up GitHub Actions for automatic syncing every 6 hours - see [Automation](#au
 - Organization scope: Sync teams from specific GitHub orgs
 - Enterprise scope: Sync all teams across the enterprise
 - Automatic cost center creation with bracket notation naming
-- Orphaned user detection and removal
+- Full sync mode (removes users who left teams)
 - Single assignment (multi-team users get last team's assignment)
 
 ### Additional Features
@@ -146,7 +146,7 @@ teams:
     - "your-org"
   
   auto_create_cost_centers: true
-  remove_orphaned_users: true
+  remove_users_no_longer_in_teams: true
 ```
 
 **Cost Center Naming:**
@@ -335,7 +335,7 @@ Check `logs/populate_cost_centers.log` for detailed traces. Use `--verbose` for 
 
 - [TEAMS_QUICKSTART.md](TEAMS_QUICKSTART.md) - Teams Mode setup guide
 - [TEAMS_INTEGRATION.md](TEAMS_INTEGRATION.md) - Teams Mode reference
-- [ORPHANED_USERS_FEATURE.md](ORPHANED_USERS_FEATURE.md) - Orphaned users documentation
+- [REMOVED_USERS_FEATURE.md](REMOVED_USERS_FEATURE.md) - Full sync mode documentation
 
 ## License
 
@@ -343,4 +343,4 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) file for 
 
 ---
 
-**Latest Features:** Teams-based assignment (organization & enterprise scope), orphaned user detection, bracket notation naming, enhanced logging, incremental processing
+**Latest Features:** Teams-based assignment (organization & enterprise scope), full sync mode (removes users who left teams), bracket notation naming, enhanced logging, incremental processing
