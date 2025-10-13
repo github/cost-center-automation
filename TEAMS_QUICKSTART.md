@@ -1,246 +1,303 @@
 # Teams Integration - Quick Start Guide
 
-Get started with GitHub Teams Integration for cost center automation in 5 minutes!
+Get started with GitHub Teams Integration for cost center automation in 5 minutes using GitHub Actions!
 
-## Step 1: Verify Prerequisites
+## Overview
 
-Ensure you have:
-- ✅ GitHub Enterprise Cloud admin access
-- ✅ Personal Access Token with:
-  - `manage_billing:enterprise` scope
-  - `read:org` scope (NEW for teams mode)
-- ✅ Python 3.8+ installed
-- ✅ Repository cloned and dependencies installed
+This guide helps you set up **automated cost center sync** that:
+- ✅ Syncs with your **enterprise teams** (default)
+- ✅ Creates one cost center per team automatically
+- ✅ Removes users from cost centers when they leave teams (full sync)
+- ✅ Runs on a schedule via GitHub Actions
 
-```bash
-cd cost-center-automation
-pip install -r requirements.txt
+## Step 1: Create Your GitHub Token
+
+1. Go to [GitHub Settings → Tokens (classic)](https://github.com/settings/tokens/new)
+2. Create a token with these scopes:
+   - ✅ `manage_billing:enterprise` (required)
+   - ✅ `read:org` (required for teams)
+3. Copy the token - you'll need it in the next step
+
+## Step 2: Set Up GitHub Actions
+
+### Add Repository Secret
+
+1. Go to your repository **Settings → Secrets and variables → Actions**
+2. Click **New repository secret**
+3. Name: `COST_CENTER_TOKEN`
+4. Value: Paste your token from Step 1
+5. Click **Add secret**
+
+### Create Workflow File
+
+Create `.github/workflows/cost-center-sync.yml`:
+
+```yaml
+name: Cost Center Sync
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:  # Allow manual runs
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Sync cost centers with enterprise teams
+        env:
+          GITHUB_TOKEN: ${{ secrets.COST_CENTER_TOKEN }}
+          GITHUB_ENTERPRISE: ${{ github.repository_owner }}
+        run: |
+          python main.py --teams-mode --assign-cost-centers --mode apply --yes
 ```
 
-## Step 2: Configure Organizations
+**Note:** This uses `github.repository_owner` as the enterprise name. If your enterprise name is different, replace it with your actual enterprise name.
 
-Edit `config/config.yaml` and add your organizations:
+## Step 3: Configure Teams Integration
+
+Edit `config/config.yaml`:
 
 ```yaml
 teams:
   enabled: true
-  mode: "auto"  # Start with auto mode
-  
-  # Add your organizations here
-  organizations:
-    - "your-github-org"
-  
+  scope: "enterprise"  # Sync with enterprise teams (default)
+  mode: "auto"  # Create one cost center per team
   auto_create_cost_centers: true
-  cost_center_name_template: "Team: {team_name}"
+  remove_users_no_longer_in_teams: true  # Full sync: remove users who left teams
 ```
 
-## Step 3: Set Environment Variables
+**That's it!** With these defaults, you get:
+- ✅ Enterprise team sync (no need to list organizations)
+- ✅ Automatic cost center creation per team
+- ✅ Full sync mode (users removed when they leave teams)
 
-```bash
-# Set your GitHub token and enterprise
-export GITHUB_TOKEN="ghp_your_token_here"
-export GITHUB_ENTERPRISE="your-enterprise-name"
-```
+## Step 4: Test Your Setup
 
-Or create a `.env` file:
-```
-GITHUB_TOKEN=ghp_your_token_here
-GITHUB_ENTERPRISE=your-enterprise-name
-```
+### Manual Test Run
 
-## Step 4: Test with Plan Mode
+Trigger the workflow manually to test:
 
-Run in plan mode to see what would happen (no changes made):
+1. Go to **Actions** tab in your repository
+2. Click **Cost Center Sync** workflow
+3. Click **Run workflow** dropdown
+4. Click **Run workflow** button
 
-```bash
-python main.py --teams-mode --assign-cost-centers --mode plan
-```
+### Check the Output
 
-You should see:
-- List of teams found in your organization
-- Cost centers that would be created
-- Users that would be assigned
-- Summary of assignments
+Watch the workflow run and verify:
+- ✅ All enterprise teams are discovered
+- ✅ Cost centers are created with format `[enterprise team] {team-name}`
+- ✅ Users are assigned correctly
+- ✅ No errors in the logs
 
-## Step 5: Review the Plan
+### Verify in GitHub
 
-Check the output for:
-- ✅ All expected teams are listed
-- ✅ Cost center names look correct
-- ✅ Team member counts are accurate
-- ⚠️  Review any warnings about users in multiple teams
-- ✅ No unexpected errors
-
-Example output:
-```
-2025-10-06 10:00:00 [INFO] Found 5 teams in your-github-org
-2025-10-06 10:00:01 [INFO] Team Frontend (your-github-org/frontend) → Cost Center 'Team: Frontend': 12 members
-2025-10-06 10:00:02 [INFO] Team Backend (your-github-org/backend) → Cost Center 'Team: Backend': 8 members
-...
-2025-10-06 10:00:04 [WARNING] ⚠️  Found 3 users who are members of multiple teams.
-2025-10-06 10:00:04 [WARNING]   ⚠️  alice is in multiple teams [org/frontend, org/mobile] → will be assigned to 'Team: Mobile'
-2025-10-06 10:00:05 [INFO] Team assignment summary: 5 cost centers, 42 unique users (each assigned to exactly ONE cost center)
-```
-
-## Step 6: Apply Changes
-
-When you're ready to apply:
-
-```bash
-# With confirmation prompt
-python main.py --teams-mode --assign-cost-centers --mode apply
-
-# Or skip confirmation (for automation)
-python main.py --teams-mode --assign-cost-centers --mode apply --yes
-```
-
-## Step 7: Verify Results
-
-Check your GitHub Enterprise cost centers:
 1. Go to `https://github.com/enterprises/YOUR-ENTERPRISE/billing/cost_centers`
-2. Verify new cost centers were created
-3. Click into each cost center to see assigned users
+2. Verify cost centers were created for each team
+3. Click into each cost center to verify user assignments
 
-## Next Steps
+## Step 5: Review Full Sync Behavior
 
-### Option A: Keep Auto Mode
-If you're happy with one cost center per team, you're done! Just run regularly:
+**Full sync mode is enabled by default** (`remove_users_no_longer_in_teams: true`):
 
-```bash
-# Daily sync (cron example)
-0 2 * * * cd /path/to/repo && python main.py --teams-mode --assign-cost-centers --mode apply --yes
+- ✅ Users **added** to a team → automatically assigned to that team's cost center
+- ✅ Users **removed** from a team → automatically removed from that team's cost center
+- ✅ Users **moved** between teams → reassigned to the new team's cost center
+
+### Check the Logs
+
+After the first run, review the logs for users who left teams:
+
+```
+[INFO] Checking for users in cost centers who are no longer in teams...
+[INFO] Found 3 users no longer in teams across 2 cost centers
+[INFO] Removing users from cost centers...
+[INFO] Removed alice from cost center '[enterprise team] Frontend'
 ```
 
-### Option B: Switch to Manual Mode
-For more control over team-to-cost-center mappings:
+## Advanced Configuration
+
+### Option 1: Use Organization Teams Instead
+
+If you prefer organization-level teams:
 
 ```yaml
 teams:
-  enabled: true
-  mode: "manual"
-  
+  scope: "organization"
   organizations:
-    - "your-github-org"
-  
-  team_mappings:
-    "your-github-org/frontend": "Engineering: Frontend"
-    "your-github-org/backend": "Engineering: Backend"
-    "your-github-org/mobile-ios": "Engineering: Mobile"
-    "your-github-org/mobile-android": "Engineering: Mobile"  # Same cost center
+    - "your-org-1"
+    - "your-org-2"
 ```
 
-### Option C: Use Custom Naming Template
-Customize how cost centers are named in auto mode:
+Cost centers will be named: `[org team] {org-name}/{team-name}`
+
+### Option 2: Disable Full Sync
+
+If you want to keep users in cost centers even after they leave teams:
 
 ```yaml
 teams:
-  mode: "auto"
-  # Include org name in cost center
-  cost_center_name_template: "{org} - {team_name}"
-  # Or use team slug
-  cost_center_name_template: "Team: {team_slug}"
-  # Or get creative
-  cost_center_name_template: "[{org}] {team_name}"
+  remove_users_no_longer_in_teams: false
 ```
 
-## Common Scenarios
+⚠️ **Warning:** This can cause cost centers to grow indefinitely.
 
-### Scenario 1: Multiple Organizations
-```yaml
-teams:
-  organizations:
-    - "org1"
-    - "org2"
-    - "org3"
-  cost_center_name_template: "{org}: {team_name}"
-```
+### Option 3: Manual Mode
 
-### Scenario 2: Existing Cost Centers (Manual Mode)
+For complete control over team-to-cost-center mappings:
+
 ```yaml
 teams:
   mode: "manual"
-  auto_create_cost_centers: false  # Use existing IDs
   team_mappings:
-    "my-org/team-a": "CC-001-EXISTING"
-    "my-org/team-b": "CC-002-EXISTING"
+    "frontend": "Engineering: Frontend"  # Enterprise teams use just slug
+    "backend": "Engineering: Backend"
+    "mobile-ios": "Engineering: Mobile"
+    "mobile-android": "Engineering: Mobile"  # Multiple teams → same cost center
 ```
 
-### Scenario 3: Mixed Approach
+### Option 4: Custom Schedule
+
+Adjust the cron schedule in your workflow:
+
 ```yaml
-teams:
-  mode: "manual"
-  auto_create_cost_centers: true  # Create if needed
-  team_mappings:
-    "my-org/frontend": "CC-FRONTEND-001"  # Existing
-    "my-org/backend": "Engineering: Backend"  # Will be created
+on:
+  schedule:
+    - cron: '0 2 * * *'    # Daily at 2 AM UTC
+    # - cron: '0 */6 * * *'  # Every 6 hours
+    # - cron: '0 2 * * 1'    # Weekly on Monday at 2 AM
 ```
 
 ## Troubleshooting
 
-### Error: "Teams mode requires organizations to be configured"
-**Fix**: Add organizations to config:
-```yaml
-teams:
-  organizations:
-    - "your-org"
+### Workflow Fails: "Authentication failed"
+
+**Causes:**
+- ❌ Token not set or expired
+- ❌ Token missing required scopes
+
+**Fix:**
+1. Verify secret name matches: `COST_CENTER_TOKEN`
+2. Check token has `manage_billing:enterprise` and `read:org` scopes
+3. Regenerate token if expired
+
+### Error: "Failed to fetch enterprise teams"
+
+**Causes:**
+- ❌ Wrong enterprise name in workflow
+- ❌ Token doesn't have access to enterprise
+
+**Fix:**
+1. Check the enterprise name in your workflow matches your actual enterprise
+2. Verify token owner has enterprise admin access
+
+### Warning: "User in multiple teams"
+
+**This is normal.** Users can only belong to ONE cost center. If someone is in multiple teams, they'll be assigned to the LAST team processed.
+
+**Review the logs** to see assignments:
+```
+[WARNING] alice is in multiple teams [frontend, mobile] → will be assigned to '[enterprise team] mobile'
 ```
 
-### Error: "Failed to fetch teams for org X"
-**Possible causes**:
-- Token missing `read:org` scope → Regenerate token with correct scope
-- Wrong org name → Check spelling
-- No access to org → Verify token has access
+**Solutions:**
+- Accept this behavior (user's primary team wins)
+- Use manual mode to control which teams are included
+- Restructure team membership to have clear primary teams
 
-### Warning: "No mapping found for team org/team-slug in manual mode"
-**Fix**: Add mapping for the team:
+### Want to See What Would Change?
+
+Add a plan-only workflow for testing:
+
 ```yaml
-teams:
-  team_mappings:
-    "org/team-slug": "Cost Center Name"
+name: Cost Center Sync (Plan Only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - env:
+          GITHUB_TOKEN: ${{ secrets.COST_CENTER_TOKEN }}
+          GITHUB_ENTERPRISE: ${{ github.repository_owner }}
+        run: |
+          python main.py --teams-mode --assign-cost-centers --mode plan
 ```
 
-### Warning: User in multiple teams
-**This is a conflict notification.** Users can only belong to ONE cost center. If a user is in multiple teams, they'll be assigned to the LAST team's cost center processed. Review the warning logs to see which cost center each multi-team user will get.
+## Local Testing (Optional)
 
-**Solution:** If this is not desired:
-1. Use manual mode to control which teams are processed
-2. Ensure users have one primary team for cost allocation
-3. Review team membership structure
+If you want to test locally before using Actions:
+
+```bash
+# Clone and setup
+git clone <your-repo-url>
+cd cost-center-automation
+pip install -r requirements.txt
+
+# Set environment variables
+export GITHUB_TOKEN="your_token_here"
+export GITHUB_ENTERPRISE="your-enterprise"
+
+# Run in plan mode (dry run)
+python main.py --teams-mode --assign-cost-centers --mode plan
+
+# Apply changes
+python main.py --teams-mode --assign-cost-centers --mode apply --yes
+```
 
 ## Getting Help
 
-- 📖 Full documentation: `README.md`
-- 🔍 Detailed reference: `TEAMS_INTEGRATION.md`
-- 💡 Implementation details: `IMPLEMENTATION_SUMMARY.md`
+- 📖 Full documentation: [README.md](README.md)
+- 🔍 Detailed reference: [TEAMS_INTEGRATION.md](TEAMS_INTEGRATION.md)
 - 🐛 Report issues: GitHub Issues
 
 ## Quick Command Reference
 
-
 ```bash
-# Show configuration
+# Show current configuration
 python main.py --teams-mode --show-config
 
-# Plan (dry run)
+# Plan (dry run) - see what would change
 python main.py --teams-mode --assign-cost-centers --mode plan
 
-# Apply with confirmation
+# Apply changes with confirmation prompt
 python main.py --teams-mode --assign-cost-centers --mode apply
 
-# Apply without confirmation
+# Apply changes without confirmation (for automation)
 python main.py --teams-mode --assign-cost-centers --mode apply --yes
-
-# Generate summary report
-python main.py --teams-mode --summary-report
 
 # Verbose mode (for debugging)
 python main.py --teams-mode --assign-cost-centers --mode plan --verbose
-
-# Note: Incremental mode is NOT supported for teams mode. All team members are processed every run.
 ```
 
 ---
 
-**🎉 That's it! You're now using GitHub Teams Integration for cost center automation.**
+**🎉 That's it! Your cost centers now sync automatically with your enterprise teams via GitHub Actions.**
 
-For advanced usage, automation setup, and best practices, see the full documentation in `TEAMS_INTEGRATION.md`.
+Every day (or on your chosen schedule), the workflow will:
+1. Discover all enterprise teams
+2. Create/update cost centers for each team
+3. Assign users based on team membership
+4. Remove users who left teams (full sync)
+
+For advanced usage and customization, see [TEAMS_INTEGRATION.md](TEAMS_INTEGRATION.md).
