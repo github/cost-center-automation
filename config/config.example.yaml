@@ -1,0 +1,60 @@
+# GitHub Configuration
+github:
+  # GitHub Enterprise name (required)
+  enterprise: "your_enterprise_name"
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  file: "logs/populate_cost_centers.log"
+
+# Cost Center Configuration
+cost_centers:
+  # Manual cost center IDs (only needed when auto_create is false)
+  no_prus_cost_center_id: "REPLACE_WITH_NO_PRUS_COST_CENTER_ID"
+  prus_allowed_cost_center_id: "REPLACE_WITH_PRUS_ALLOWED_COST_CENTER_ID"
+  
+  # Users who should get access to PRU overages (always required)
+  prus_exception_users: []
+    # - "alice"
+    # - "bob"
+  
+  # Auto-creation settings (creates cost centers if they don't exist)
+  auto_create: true  # Set to false to use existing cost center IDs above
+  
+  # Cost center names (only used when auto_create is true)
+  no_prus_cost_center_name: "00 - No PRU overages"  # Name for no-PRU cost center
+  prus_allowed_cost_center_name: "01 - PRU overages allowed"  # Name for PRU-allowed cost center
+
+# Teams Integration Configuration
+teams:
+  # Enable teams-based cost center management
+  enabled: false
+  
+  # Scope: 'organization' (org-level teams) or 'enterprise' (enterprise-level teams)
+  scope: "organization"  # Options: "organization" or "enterprise"
+  
+  # Mode: 'auto' (one cost center per team) or 'manual' (use mappings below)
+  mode: "auto"  # Options: "auto" or "manual"
+  
+  # Organizations to query for teams (only used when scope is 'organization')
+  organizations: []
+    # - "my-org-1"
+    # - "my-org-2"
+  
+  # Auto-creation settings for teams mode
+  auto_create_cost_centers: true  # Automatically create cost centers for teams
+  
+  # Cost center naming conventions (auto mode only):
+  # - Organization scope: [org team] {org-name}/{team-name}
+  # - Enterprise scope: [enterprise team] {team-name}
+  
+  # Orphaned user handling: remove users from cost centers if they're no longer in the team
+  remove_orphaned_users: true  # Set to true to automatically remove orphaned users
+  
+  # Manual team-to-cost-center mappings (only used when mode is 'manual')
+  # Format: "org/team-slug": "cost_center_id" or "cost_center_name" (if auto_create enabled)
+  team_mappings: {}
+    # "my-org/frontend-team": "CC-FRONTEND-001"
+    # "my-org/backend-team": "CC-BACKEND-001"
+    # "other-org/devops-team": "Team: DevOps"  # Will be auto-created if auto_create is true

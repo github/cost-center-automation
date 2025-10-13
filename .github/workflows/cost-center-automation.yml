@@ -1,0 +1,117 @@
+name: Cost center automation
+
+on:
+  schedule:
+    # Run every 6 hours (adjust as needed)
+    - cron: '0 */6 * * *'
+  
+  # Allow manual triggering from GitHub UI
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Run mode'
+        required: true
+        default: 'incremental'
+        type: choice
+        options:
+          - incremental
+          - full
+
+jobs:
+  update-cost-centers:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+    
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: pip install -r requirements.txt
+    
+    - name: Restore timestamp from cache
+      uses: actions/cache/restore@v4
+      with:
+        path: exports/.last_run_timestamp
+        key: incremental-timestamp-${{ github.repository }}
+        restore-keys: |
+          incremental-timestamp-
+    
+    - name: Configure enterprise slug
+      run: |
+        echo "=== Enterprise Configuration ==="
+        
+        # Use GitHub context for enterprise (automatic detection)
+        ENTERPRISE_SLUG="${{ github.event.enterprise.slug }}"
+        
+        if [ -n "$ENTERPRISE_SLUG" ] && [ "$ENTERPRISE_SLUG" != "null" ]; then
+          echo "✅ Auto-detected enterprise slug: $ENTERPRISE_SLUG"
+          echo "GITHUB_ENTERPRISE=$ENTERPRISE_SLUG" >> $GITHUB_ENV
+        else
+          echo "❌ Could not auto-detect enterprise slug from GitHub context"
+          echo "💡 This workflow must be run within an enterprise environment"
+          exit 1
+        fi
+    
+    - name: Run incremental cost center update
+      if: github.event.inputs.mode != 'full'
+      env:
+        GITHUB_TOKEN: ${{ secrets.COST_CENTER_AUTOMATION_TOKEN }}
+      run: |
+        echo "Using enterprise: $GITHUB_ENTERPRISE"
+        echo "=== Debugging incremental processing ==="
+        echo "Checking for existing timestamp files..."
+        find . -name "*timestamp*" -type f 2>/dev/null || echo "No timestamp files found"
+        ls -la exports/ 2>/dev/null || echo "No exports directory"
+        echo "=== Running main script ==="
+        python main.py --create-cost-centers --assign-cost-centers --incremental --mode apply --yes --summary-report --verbose
+        echo "=== After run - checking timestamp files again ==="
+        find . -name "*timestamp*" -type f 2>/dev/null || echo "No timestamp files found after run"
+    
+    - name: Run full cost center update  
+      if: github.event.inputs.mode == 'full'
+      env:
+        GITHUB_TOKEN: ${{ secrets.COST_CENTER_AUTOMATION_TOKEN }}
+      run: |
+        echo "Using enterprise: $GITHUB_ENTERPRISE"
+        python main.py --create-cost-centers --assign-cost-centers --mode apply --yes --summary-report --verbose
+    
+    - name: Save timestamp to cache
+      if: always()
+      uses: actions/cache/save@v4
+      with:
+        path: exports/.last_run_timestamp
+        key: incremental-timestamp-${{ github.repository }}-${{ github.run_number }}
+    
+    - name: Debug timestamp state
+      if: always()
+      run: |
+        echo "=== Timestamp debugging ==="
+        if [ -f exports/.last_run_timestamp ]; then
+          echo "Found timestamp file, contents:"
+          cat exports/.last_run_timestamp
+          mkdir -p state
+          cp exports/.last_run_timestamp state/
+        else
+          echo "No timestamp file found"
+        fi
+    
+    - name: Upload logs and state
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: cost-center-logs-${{ github.run_number }}
+        path: |
+          logs/
+          state/
+        retention-days: 30
+    
+    - name: Check for failures and notify
+      if: failure()
+      run: |
+        echo "::error::Cost center automation failed. Check the logs for details."

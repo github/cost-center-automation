@@ -1,0 +1,62 @@
+# GitHub Configuration
+github:
+  # Enterprise name is required. Prefer setting via environment var GITHUB_ENTERPRISE.
+  # Leave as placeholder or blank if supplying via environment.
+  enterprise: ""
+
+# Cost Center Settings
+cost_centers:
+  ## update with the ID of the cost center for users who should NOT receive PRUs
+  no_prus_cost_center_id: "REPLACE_WITH_NO_PRUS_COST_CENTER_ID"    
+
+  ## update with the ID of the cost center for users who should receive PRUs
+  prus_allowed_cost_center_id: "REPLACE_WITH_PRUS_ALLOWED_COST_CENTER_ID" 
+
+  # List of users to that should be added to cost center to receive PRUs 
+  prus_exception_users: []
+    # - "example.user1"  
+    # - "example.user2"
+
+  # Auto-creation settings (creates cost centers if they don't exist)
+  auto_create: true  # Auto-create required cost centers if IDs are placeholders
+  no_prus_cost_center_name: "00 - No PRU overages"  # Name for no-PRU cost center if auto-created
+  prus_allowed_cost_center_name: "01 - PRU overages allowed"  # Name for PRU-allowed cost center if auto-created
+
+# Teams Integration Configuration
+teams:
+  # Enable teams-based cost center management
+  enabled: false
+  
+  # Scope: 'organization' (org-level teams) or 'enterprise' (enterprise-level teams)
+  scope: "organization"  # Options: "organization" or "enterprise"
+  
+  # Mode: 'auto' (one cost center per team) or 'manual' (use mappings below)
+  mode: "auto"  # Options: "auto" or "manual"
+  
+  # Organizations to query for teams (only used when scope is 'organization')
+  organizations:
+    # - "your-org-name"
+  
+  # Auto-creation settings for teams mode
+  auto_create_cost_centers: true  # Automatically create cost centers for teams
+  
+  # Cost center naming conventions (auto mode only):
+  # - Organization scope: [org team] {org-name}/{team-name}
+  # - Enterprise scope: [enterprise team] {team-name}
+  
+  # Orphaned user handling: remove users from cost centers if they're no longer in the team
+  remove_orphaned_users: true  # Set to true to automatically remove orphaned users
+  
+  # Manual team-to-cost-center mappings (only used when mode is 'manual')
+  # Format: "org/team-slug": "cost_center_id" or "cost_center_name" (if auto_create enabled)
+  team_mappings: {}
+    # "my-org/frontend-team": "CC-FRONTEND-001"
+    # "my-org/backend-team": "CC-BACKEND-001"
+
+# Logging Configuration
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR
+  level: "INFO"
+  
+  # Log file location
+  file: "logs/populate_cost_centers.log"

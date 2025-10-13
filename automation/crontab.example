@@ -1,0 +1,21 @@
+# Example crontab entries for automating the cost center script
+
+# Run every Monday at 9 AM
+0 9 * * 1 /path/to/your/project/automation/update_cost_centers.sh
+
+# Run daily at 6 AM
+0 6 * * * /path/to/your/project/automation/update_cost_centers.sh
+
+# Run weekly on Sundays at 8 AM
+0 8 * * 0 /path/to/your/project/automation/update_cost_centers.sh
+
+# Run monthly on the 1st at 7 AM
+0 7 1 * * /path/to/your/project/automation/update_cost_centers.sh
+
+# To install these cron jobs:
+# 1. Edit your crontab: crontab -e
+# 2. Add one of the lines above (modify the path to match your setup)
+# 3. Save and exit
+#
+# To view current cron jobs: crontab -l
+# To remove all cron jobs: crontab -r
