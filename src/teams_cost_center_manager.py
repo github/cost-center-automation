@@ -354,11 +354,11 @@ class TeamsCostCenterManager:
             for cost_center_id, usernames in id_based_assignments.items():
                 self.logger.info(f"  {cost_center_id}: {len(usernames)} users")
             
-            # In plan mode, show that orphaned users would be checked if the option is enabled
-            if self.config.teams_remove_orphaned_users:
-                self.logger.info("\nMODE=plan: Orphaned user detection is ENABLED")
-                self.logger.info("  In apply mode, users in cost centers but not in teams will be removed")
-                self.logger.info("  (Cannot show specific orphaned users in plan mode - cost centers don't exist yet)")
+            # In plan mode, show that removed user cleanup would be performed if enabled
+            if self.config.teams_remove_users_no_longer_in_teams:
+                self.logger.info("\nMODE=plan: Full sync mode is ENABLED")
+                self.logger.info("  In apply mode, users no longer in teams will be removed from cost centers")
+                self.logger.info("  (Cannot show specific removed users in plan mode - cost centers don't exist yet)")
             
             return {}
         
@@ -366,44 +366,45 @@ class TeamsCostCenterManager:
         self.logger.info("Syncing team-based assignments to GitHub Enterprise...")
         results = self.github_manager.bulk_update_cost_center_assignments(id_based_assignments)
         
-        # Always check for orphaned users (detection), but only remove if configured
-        self.logger.info("Checking for orphaned users (users in cost centers but not in teams)...")
-        orphaned_results = self._remove_orphaned_users(
+        # Always check for users no longer in teams (detection), but only remove if configured
+        self.logger.info("Checking for users in cost centers who are no longer in teams...")
+        removed_user_results = self._remove_users_no_longer_in_teams(
             id_based_assignments, 
             cost_center_id_map, 
-            remove=self.config.teams_remove_orphaned_users
+            remove=self.config.teams_remove_users_no_longer_in_teams
         )
         
-        # Merge orphaned user removal results into main results (if removal was enabled)
-        if self.config.teams_remove_orphaned_users:
-            for cost_center_id, user_results in orphaned_results.items():
+        # Merge removed user results into main results (if removal was enabled)
+        if self.config.teams_remove_users_no_longer_in_teams:
+            for cost_center_id, user_results in removed_user_results.items():
                 if cost_center_id not in results:
                     results[cost_center_id] = {}
                 results[cost_center_id].update(user_results)
         
         return results
     
-    def _remove_orphaned_users(self, expected_assignments: Dict[str, List[str]], 
+    def _remove_users_no_longer_in_teams(self, expected_assignments: Dict[str, List[str]], 
                               cost_center_id_map: Dict[str, str],
                               remove: bool = True) -> Dict[str, Dict[str, bool]]:
         """
-        Detect and optionally remove orphaned users from cost centers.
+        Detect and optionally remove users who are no longer in teams from cost centers.
         
-        Orphaned users are those who are in a cost center but not in the corresponding team.
+        These are users who are currently assigned to a cost center but are no longer
+        members of the corresponding GitHub team.
         
         Args:
             expected_assignments: Dict mapping cost_center_id -> list of expected usernames
             cost_center_id_map: Dict mapping cost_center_name -> cost_center_id
-            remove: If True, remove orphaned users. If False, only detect and log.
+            remove: If True, remove users no longer in teams. If False, only detect and log.
             
         Returns:
             Dict mapping cost_center_id -> Dict mapping username -> removal success status
         """
         removal_results = {}
-        total_orphaned = 0
-        total_removed = 0
+        total_removed_users = 0
+        total_successfully_removed = 0
         
-        self.logger.info(f"Checking {len(expected_assignments)} cost centers for orphaned users...")
+        self.logger.info(f"Checking {len(expected_assignments)} cost centers for users no longer in teams...")
         
         for cost_center_id, expected_users in expected_assignments.items():
             # Get current members of the cost center
@@ -414,12 +415,12 @@ class TeamsCostCenterManager:
             self.logger.debug(f"  Current: {sorted(current_members)}")
             self.logger.debug(f"  Expected: {sorted(expected_users)}")
             
-            # Find orphaned users (in cost center but not in expected team members)
+            # Find users no longer in teams (in cost center but not in expected team members)
             expected_users_set = set(expected_users)
             current_members_set = set(current_members)
-            orphaned_users = current_members_set - expected_users_set
+            users_no_longer_in_team = current_members_set - expected_users_set
             
-            if orphaned_users:
+            if users_no_longer_in_team:
                 # Find the cost center name for logging
                 cost_center_name = None
                 for name, cc_id in cost_center_id_map.items():
@@ -430,47 +431,47 @@ class TeamsCostCenterManager:
                 display_name = cost_center_name or cost_center_id
                 
                 self.logger.warning(
-                    f"⚠️  Found {len(orphaned_users)} orphaned users in cost center '{display_name}' "
+                    f"⚠️  Found {len(users_no_longer_in_team)} users no longer in team for cost center '{display_name}' "
                     f"(in cost center but not in team)"
                 )
                 
-                for username in sorted(orphaned_users):
+                for username in sorted(users_no_longer_in_team):
                     self.logger.warning(f"   ⚠️  {username} is in cost center but not in team")
                 
-                total_orphaned += len(orphaned_users)
+                total_removed_users += len(users_no_longer_in_team)
                 
-                # Remove orphaned users if configured
+                # Remove users no longer in teams if configured
                 if remove:
-                    self.logger.info(f"Removing {len(orphaned_users)} orphaned users from '{display_name}'...")
+                    self.logger.info(f"Removing {len(users_no_longer_in_team)} users from '{display_name}'...")
                     removal_status = self.github_manager.remove_users_from_cost_center(
                         cost_center_id, 
-                        list(orphaned_users)
+                        list(users_no_longer_in_team)
                     )
                     
                     removal_results[cost_center_id] = removal_status
                     successful_removals = sum(1 for success in removal_status.values() if success)
-                    total_removed += successful_removals
+                    total_successfully_removed += successful_removals
                     
-                    if successful_removals < len(orphaned_users):
-                        failed = len(orphaned_users) - successful_removals
+                    if successful_removals < len(users_no_longer_in_team):
+                        failed = len(users_no_longer_in_team) - successful_removals
                         self.logger.warning(
-                            f"Failed to remove {failed}/{len(orphaned_users)} orphaned users from '{display_name}'"
+                            f"Failed to remove {failed}/{len(users_no_longer_in_team)} users from '{display_name}'"
                         )
                 else:
-                    self.logger.info(f"⚠️  Orphaned user removal is DISABLED - users will remain in cost center")
+                    self.logger.info(f"⚠️  Full sync is DISABLED - users will remain in cost center")
         
-        if total_orphaned > 0:
+        if total_removed_users > 0:
             if remove:
                 self.logger.info(
-                    f"📊 Orphaned users summary: Found {total_orphaned} orphaned users, "
-                    f"successfully removed {total_removed}"
+                    f"📊 Removed users summary: Found {total_removed_users} users no longer in teams, "
+                    f"successfully removed {total_successfully_removed}"
                 )
             else:
                 self.logger.warning(
-                    f"📊 Orphaned users summary: Found {total_orphaned} orphaned users (NOT removed - removal disabled)"
+                    f"📊 Removed users summary: Found {total_removed_users} users no longer in teams (NOT removed - full sync disabled)"
                 )
         else:
-            self.logger.info("✅ No orphaned users found - all cost centers are in sync with teams")
+            self.logger.info("✅ No users found who left teams - all cost centers are in sync with teams")
         
         return removal_results
     

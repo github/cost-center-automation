@@ -110,12 +110,16 @@ class ConfigManager:
             # Teams integration configuration
             teams_config = config_data.get("teams", {})
             self.teams_enabled = teams_config.get("enabled", False)
-            self.teams_scope = teams_config.get("scope")  # Required: "organization" or "enterprise"
+            self.teams_scope = teams_config.get("scope", "enterprise")  # Default: "enterprise"
             self.teams_mode = teams_config.get("mode", "auto")  # "auto" or "manual"
             self.teams_organizations = teams_config.get("organizations", [])
             self.teams_auto_create = teams_config.get("auto_create_cost_centers", True)
             self.teams_mappings = teams_config.get("team_mappings", {})
-            self.teams_remove_orphaned_users = teams_config.get("remove_orphaned_users", False)
+            # Support both new and old config key names for backward compatibility
+            self.teams_remove_users_no_longer_in_teams = teams_config.get(
+                "remove_users_no_longer_in_teams",
+                teams_config.get("remove_orphaned_users", True)  # Fallback to old key
+            )
             
             # Store full config for other methods
             self.config = config_data

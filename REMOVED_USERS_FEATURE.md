@@ -1,16 +1,16 @@
-# Orphaned User Detection and Removal Feature
+# Full Sync Mode - Removed Users Feature
 
 ## Overview
 
-This feature automatically detects and optionally removes "orphaned users" from cost centers. Orphaned users are those who are assigned to a cost center but are no longer members of the corresponding GitHub team.
+This feature automatically detects and removes users from cost centers when they're no longer members of the corresponding GitHub team. This "full sync" mode ensures cost centers stay perfectly synchronized with actual team membership.
 
 ## Why This Feature?
 
 When teams change over time (members leave, are removed, or switch teams), their cost center assignments can become stale. This feature keeps cost centers synchronized with actual team membership by:
 
 1. **Detecting** users in cost centers who are no longer in the corresponding team
-2. **Reporting** these orphaned users with warnings
-3. **Optionally removing** them based on configuration
+2. **Reporting** these users with warnings
+3. **Automatically removing** them to maintain sync
 
 ## How It Works
 
@@ -19,13 +19,13 @@ When teams change over time (members leave, are removed, or switch teams), their
 For each cost center being managed:
 1. Fetch the **expected members** from the GitHub team
 2. Fetch the **current members** from the cost center API
-3. Calculate orphaned users: `current_members - expected_members`
-4. Log warnings for any orphaned users found
+3. Calculate users no longer in teams: `current_members - expected_members`
+4. Log warnings for any users found who left teams
 
 ### Removal Logic (when enabled)
 
-If `teams.remove_orphaned_users: true`:
-- Automatically remove orphaned users from their cost centers
+If `teams.remove_users_no_longer_in_teams: true` (default):
+- Automatically remove users who left teams from their cost centers
 - Log success/failure for each removal
 - Provide summary statistics
 
@@ -41,59 +41,60 @@ teams:
   scope: "enterprise"  # or "organization"
   mode: "auto"
   
-  # Orphaned user handling
-  remove_orphaned_users: false  # Set to true to enable automatic removal
+  # Full sync mode
+  remove_users_no_longer_in_teams: true  # Set to false to disable automatic removal
 ```
 
 ### Default Behavior
 
-- **Default**: `false` (disabled)
-- **When disabled**: Orphaned users are detected and logged but NOT removed
-- **When enabled**: Orphaned users are detected and automatically removed
+- **Default**: `true` (enabled - full sync mode)
+- **When enabled**: Users who left teams are detected and automatically removed
+- **When disabled**: Users who left teams are detected and logged but NOT removed
 
 ## Usage Examples
 
 ### Plan Mode (Preview)
 
 ```bash
-# See what would happen (with removal disabled)
+# With full sync enabled (default)
 python main.py --teams-mode --assign-cost-centers --mode plan
 
 # Output shows:
-# MODE=plan: Orphaned user detection is DISABLED
-# Users in cost centers but not in teams will remain assigned
+# MODE=plan: Full sync mode is ENABLED
+# In apply mode, users no longer in teams will be removed from cost centers
+# (Cannot show specific removed users in plan mode - cost centers don't exist yet)
 ```
 
 ```bash
-# With removal enabled in config
+# With full sync disabled in config
 python main.py --teams-mode --assign-cost-centers --mode plan
 
 # Output shows:
-# MODE=plan: Orphaned user detection is ENABLED
-# In apply mode, users in cost centers but not in teams will be removed
+# MODE=plan: Full sync mode is DISABLED
+# Users in cost centers but not in teams will remain assigned
 ```
 
 ### Apply Mode (Execution)
 
 ```bash
-# Apply with removal disabled (default)
-python main.py --teams-mode --assign-cost-centers --mode apply --yes
-
-# Adds users to cost centers but leaves orphaned users alone
-```
-
-```bash
-# Apply with removal enabled
+# Apply with full sync enabled (default)
 python main.py --teams-mode --assign-cost-centers --mode apply --yes
 
 # Output includes:
-# [INFO] Checking for orphaned users...
-# [WARNING] ⚠️  Found 3 orphaned users in cost center 'Team: Frontend'
+# [INFO] Checking for users in cost centers who are no longer in teams...
+# [WARNING] ⚠️  Found 3 users no longer in team for cost center '[enterprise team] Frontend'
 # [WARNING]    ⚠️  alice is in cost center but not in team
 # [WARNING]    ⚠️  bob is in cost center but not in team
-# [INFO] Removing 3 orphaned users from 'Team: Frontend'...
+# [INFO] Removing 3 users from '[enterprise team] Frontend'...
 # [INFO] ✅ Successfully removed 3 users from cost center
-# [INFO] 📊 Orphaned users summary: Found 3 orphaned users, successfully removed 3
+# [INFO] 📊 Removed users summary: Found 3 users no longer in teams, successfully removed 3
+```
+
+```bash
+# Apply with full sync disabled
+python main.py --teams-mode --assign-cost-centers --mode apply --yes
+
+# Adds users to cost centers but leaves users who left teams alone
 ```
 
 ## API Methods Added
@@ -142,25 +143,26 @@ results = github_manager.remove_users_from_cost_center(
    - Added `remove_users_from_cost_center()` method
 
 2. **`src/config_manager.py`**
-   - Added `teams_remove_orphaned_users` configuration property
+   - Added `teams_remove_users_no_longer_in_teams` configuration property
+   - Backward compatibility with old `remove_orphaned_users` key
 
 3. **`src/teams_cost_center_manager.py`**
-   - Added `_remove_orphaned_users()` private method
-   - Modified `sync_team_assignments()` to call orphaned user detection
-   - Added orphaned user handling in apply mode
+   - Added `_remove_users_no_longer_in_teams()` private method
+   - Modified `sync_team_assignments()` to call removed user detection
+   - Added removed user handling in apply mode
 
 4. **`config/config.yaml` & `config/config.example.yaml`**
-   - Added `remove_orphaned_users` configuration option with documentation
+   - Added `remove_users_no_longer_in_teams` configuration option with documentation
 
 5. **`main.py`**
-   - Display `remove_orphaned_users` status in configuration output
+   - Display full sync mode status in configuration output
 
 ### Logging
 
 The feature provides comprehensive logging:
 
 - **INFO**: General operation status
-- **WARNING**: Orphaned users detected
+- **WARNING**: Users no longer in teams detected
 - **ERROR**: API failures or removal failures
 - **DEBUG**: Detailed member counts
 
@@ -181,10 +183,10 @@ The feature provides comprehensive logging:
 - Cost reporting is inaccurate
 - Manual cleanup required
 
-**With this feature**:
+**With full sync mode**:
 ```yaml
 teams:
-  remove_orphaned_users: true
+  remove_users_no_longer_in_teams: true  # Default
 ```
 - Users automatically removed from old cost center
 - Added to new cost center
@@ -222,17 +224,20 @@ Always run with `--mode plan` to see what changes would be made:
 python main.py --teams-mode --assign-cost-centers --mode plan
 ```
 
-### 2. Enable Gradually
+### 2. Test Before Enabling Full Sync
 
-Start with `remove_orphaned_users: false` to see how many orphaned users exist:
+If you want to see users who left teams without removing them first:
 
 ```bash
-# Step 1: Run once to see orphaned users (they'll be logged as warnings)
+# Step 1: Disable full sync temporarily
+# Set remove_users_no_longer_in_teams: false in config
+
+# Step 2: Run once to see users who left (they'll be logged as warnings)
 python main.py --teams-mode --assign-cost-centers --mode apply --yes
 
-# Step 2: Review logs for orphaned users
-# Step 3: If comfortable, enable removal
-# Step 4: Run again with removal enabled
+# Step 3: Review logs for users who left teams
+# Step 4: If comfortable, enable full sync (set to true)
+# Step 5: Run again with full sync enabled
 ```
 
 ### 3. Regular Sync Schedule
@@ -247,22 +252,22 @@ Run teams sync regularly to keep cost centers up-to-date:
 ### 4. Monitor Logs
 
 Review execution logs for:
-- Number of orphaned users found
+- Number of users who left teams found
 - Removal success rates
 - Any API errors
 
 ### 5. Consider Impact
 
-Before enabling `remove_orphaned_users: true`, consider:
+Full sync mode is enabled by default. Before using it, consider:
 - Do you have users manually added to cost centers outside of team membership?
 - Are there legitimate reasons for users to be in cost centers but not teams?
 - Do you have adequate logging/monitoring?
 
 ## Limitations
 
-1. **Plan Mode**: Cannot show specific orphaned users in plan mode because cost centers may not exist yet. Orphaned user detection only runs in apply mode after cost centers are created/resolved.
+1. **Plan Mode**: Cannot show specific users who left teams in plan mode because cost centers may not exist yet. Detection only runs in apply mode after cost centers are created/resolved.
 
-2. **Manual Assignments**: If you manually add users to cost centers outside of this tool, they will be detected as orphaned and removed if they're not in the corresponding team.
+2. **Manual Assignments**: If you manually add users to cost centers outside of this tool, they will be detected as "not in team" and removed if they're not in the corresponding team.
 
 3. **API Rate Limits**: Checking cost center membership adds API calls. Large numbers of cost centers may hit rate limits.
 
@@ -270,14 +275,14 @@ Before enabling `remove_orphaned_users: true`, consider:
 
 ## Troubleshooting
 
-### Orphaned users not being removed
+### Users who left teams not being removed
 
 **Check**:
-1. Is `remove_orphaned_users: true` in config?
+1. Is `remove_users_no_longer_in_teams: true` in config? (Should be default)
 2. Running in `--mode apply` (not plan)?
 3. Check logs for API errors
 
-### False positives (users incorrectly identified as orphaned)
+### False positives (users incorrectly identified as having left)
 
 **Cause**: User is not in the team being synced
 
@@ -290,25 +295,25 @@ Before enabling `remove_orphaned_users: true`, consider:
 
 **Cause**: Cost center doesn't exist yet (plan mode issue)
 
-**Solution**: This is expected in plan mode. Orphaned detection only runs in apply mode.
+**Solution**: This is expected in plan mode. Detection only runs in apply mode.
 
 ## Future Enhancements
 
 Potential improvements:
-1. **Dry-run for orphaned users**: Show what would be removed without actually removing
+1. **Dry-run for removed users**: Show what would be removed without actually removing
 2. **Whitelist**: Configure specific users to never be removed
-3. **Notification**: Send alerts when orphaned users are found/removed
-4. **Audit log export**: Export orphaned user reports to CSV
+3. **Notification**: Send alerts when users who left teams are found/removed
+4. **Audit log export**: Export removed user reports to CSV
 
 ## Summary
 
-The orphaned user detection and removal feature helps maintain clean, accurate cost center assignments by:
+The full sync mode (removed users feature) helps maintain clean, accurate cost center assignments by:
 
-- ✅ **Detecting** users who shouldn't be in cost centers
+- ✅ **Detecting** users who left teams but are still in cost centers
 - ✅ **Reporting** discrepancies with clear warnings  
-- ✅ **Removing** orphaned users automatically (when enabled)
+- ✅ **Removing** users who left teams automatically (enabled by default)
 - ✅ **Working** with both organization and enterprise team scopes
-- ✅ **Configurable** - enable/disable as needed
-- ✅ **Safe** - disabled by default, clear logging, error handling
+- ✅ **Configurable** - disable if needed
+- ✅ **Safe** - clear logging, error handling, backward compatible
 
 This keeps your cost center data synchronized with actual team membership over time with minimal manual intervention.
