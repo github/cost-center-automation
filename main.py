@@ -19,6 +19,7 @@ Automates cost center assignments for GitHub Copilot users with two operational 
 
 import argparse
 import logging
+import signal
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -28,6 +29,23 @@ from src.cost_center_manager import CostCenterManager
 from src.teams_cost_center_manager import TeamsCostCenterManager
 from src.config_manager import ConfigManager
 from src.logger_setup import setup_logging
+
+
+def setup_signal_handlers():
+    """Setup signal handlers to gracefully handle broken pipes and interrupts."""
+    def handle_broken_pipe(signum, frame):
+        """Handle broken pipe gracefully - exit quietly when output pipe is closed."""
+        sys.exit(0)
+    
+    def handle_interrupt(signum, frame):
+        """Handle keyboard interrupt gracefully."""
+        print("\n\nOperation interrupted by user.", file=sys.stderr)
+        sys.exit(1)
+    
+    # Handle broken pipe (e.g., when piping to head, less, etc.)
+    signal.signal(signal.SIGPIPE, handle_broken_pipe)
+    # Handle Ctrl+C
+    signal.signal(signal.SIGINT, handle_interrupt)
 
 
 def parse_arguments():
@@ -115,6 +133,17 @@ Examples:
         help="Comma-separated list of specific users to process"
     )
     
+    parser.add_argument(
+        "--check-current-cost-center",
+        action="store_true",
+        help="Check current cost center membership before assigning users (default: assign users without checking current membership for better performance)"
+    )
+    
+    parser.add_argument(
+        "--create-budgets",
+        action="store_true",
+        help="Create budgets for new cost centers (requires unreleased GitHub Enterprise APIs)"
+    )
     
     parser.add_argument(
         "--config",
@@ -127,6 +156,25 @@ Examples:
         "-v",
         action="store_true",
         help="Enable verbose logging"
+    )
+    
+    # Cache management options
+    parser.add_argument(
+        "--cache-stats",
+        action="store_true",
+        help="Show cost center cache statistics"
+    )
+    
+    parser.add_argument(
+        "--clear-cache",
+        action="store_true",
+        help="Clear the cost center cache"
+    )
+    
+    parser.add_argument(
+        "--cache-cleanup",
+        action="store_true",
+        help="Remove expired entries from the cost center cache"
     )
     
     return parser.parse_args()
@@ -152,6 +200,8 @@ def _handle_teams_mode(args, config: ConfigManager, teams_manager, logger) -> No
     
     print(f"Auto-create cost centers: {config.teams_auto_create}")
     print(f"Full sync (remove users who left teams): {config.teams_remove_users_no_longer_in_teams}")
+    print(f"Check current cost center: {args.check_current_cost_center}")
+    print(f"Create budgets: {args.create_budgets}")
     
     if config.teams_mode == "auto":
         if teams_scope == "enterprise":
@@ -204,21 +254,25 @@ def _handle_teams_mode(args, config: ConfigManager, teams_manager, logger) -> No
         
         # Build and optionally sync assignments
         if args.mode == "plan":
-            results = teams_manager.sync_team_assignments(mode="plan")
+            results = teams_manager.sync_team_assignments(mode="plan", ignore_current_cost_center=not args.check_current_cost_center)
         else:  # apply mode
             # Safety confirmation unless --yes provided
             if not args.yes:
                 print("\n⚠️  WARNING: You are about to APPLY team-based cost center assignments!")
                 print("This will assign users to cost centers based on their team membership.")
                 print("NOTE: Each user can only belong to ONE cost center.")
-                print("Users in multiple teams will be assigned to the LAST team's cost center.")
+                print("Users in multiple teams: assignment depends on current cost center status.")
+                if args.check_current_cost_center:
+                    print("� Current cost center membership will be checked - users in other cost centers will be SKIPPED.")
+                else:
+                    print("⚡ Fast mode: Users will be assigned WITHOUT checking current cost center membership.")
                 confirm = input("\nProceed? Type 'apply' to continue: ").strip().lower()
                 if confirm != "apply":
                     logger.warning("Aborted by user before applying assignments")
                     return
             
             logger.info("Applying team-based assignments to GitHub Enterprise...")
-            results = teams_manager.sync_team_assignments(mode="apply")
+            results = teams_manager.sync_team_assignments(mode="apply", ignore_current_cost_center=not args.check_current_cost_center)
             
             if results:
                 # Process detailed results for summary
@@ -329,6 +383,9 @@ def _show_success_summary(config: ConfigManager, args, users: Optional[List[Dict
 
 def main():
     """Main execution function."""
+    # Setup signal handlers first
+    setup_signal_handlers()
+    
     args = parse_arguments()
     
     # Setup logging
@@ -348,6 +405,40 @@ def main():
         config.check_config_warnings()
         
         logger.info("Configuration loaded successfully")
+        
+        # Handle cache management commands (can be run without GitHub API)
+        if args.cache_stats or args.clear_cache or args.cache_cleanup:
+            from src.cost_center_cache import CostCenterCache
+            cache = CostCenterCache()
+            
+            if args.cache_stats:
+                stats = cache.get_cache_stats()
+                print("\n===== Cost Center Cache Statistics =====")
+                print(f"Cache file: {stats['cache_file']}")
+                print(f"Total entries: {stats['total_entries']}")
+                print(f"Valid entries: {stats['valid_entries']}")
+                print(f"Expired entries: {stats['expired_entries']}")
+                print(f"Cache TTL: {stats['ttl_hours']} hours")
+                print(f"Last updated: {stats['last_updated'] or 'Never'}")
+                
+                if stats['total_entries'] > 0:
+                    hit_rate = (stats['valid_entries'] / stats['total_entries']) * 100
+                    print(f"Effective hit rate: {hit_rate:.1f}%")
+                print("==========================================\n")
+            
+            if args.clear_cache:
+                cache.clear_cache()
+                print("Cost center cache cleared successfully.\n")
+            
+            if args.cache_cleanup:
+                removed_count = cache.cleanup_expired_entries()
+                print(f"Cleaned up {removed_count} expired cache entries.\n")
+            
+            # Exit if only cache management was requested
+            if args.cache_stats or args.clear_cache or args.cache_cleanup:
+                if not any([args.list_users, args.assign_cost_centers, args.summary_report, 
+                           args.show_config, args.teams_mode]):
+                    return
         
         # Initialize GitHub manager
         github_manager = GitHubCopilotManager(config)
@@ -379,7 +470,7 @@ def main():
                     sys.exit(1)
             
             # Initialize teams manager
-            teams_manager = TeamsCostCenterManager(config, github_manager)
+            teams_manager = TeamsCostCenterManager(config, github_manager, create_budgets=args.create_budgets)
             
             scope_label = "enterprise" if teams_scope == "enterprise" else f"{len(config.teams_organizations)} organizations"
             logger.info(f"Teams mode enabled: {config.teams_mode} mode with {teams_scope} scope ({scope_label})")
@@ -548,6 +639,10 @@ def main():
                     if not args.yes:
                         print("\nYou are about to APPLY cost center assignments to GitHub Enterprise.")
                         print("This will push assignments for ALL processed users (no diff).")
+                        if args.check_current_cost_center:
+                            print("� Current cost center membership will be checked - users in other cost centers will be SKIPPED.")
+                        else:
+                            print("⚡ Fast mode: Users will be assigned WITHOUT checking current cost center membership.")
                         print("Summary:")
                         for cc_id, usernames in desired_groups.items():
                             print(f"  - {cc_id}: {len(usernames)} users")
@@ -560,7 +655,7 @@ def main():
                     if not cost_center_groups:
                         logger.warning("No users to sync")
                     else:
-                        results = github_manager.bulk_update_cost_center_assignments(cost_center_groups)
+                        results = github_manager.bulk_update_cost_center_assignments(cost_center_groups, not args.check_current_cost_center)
                         
                         # Process detailed results for summary
                         total_users_attempted = 0
@@ -620,6 +715,12 @@ def main():
         
         logger.info("Script execution completed successfully")
         
+    except BrokenPipeError:
+        # Handle broken pipe gracefully (e.g., when output is piped to head, less, etc.)
+        sys.exit(0)
+    except KeyboardInterrupt:
+        logger.info("\nOperation interrupted by user")
+        sys.exit(1)
     except Exception as e:
         logger.error(f"Script execution failed: {str(e)}")
         sys.exit(1)

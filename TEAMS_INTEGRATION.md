@@ -236,7 +236,7 @@ teams:
 - Token doesn't have access to the organization
 
 ### Warning: "User X is in multiple teams"
-**This is expected**: The tool warns you when a user belongs to multiple teams. The user will be assigned to the LAST team's cost center processed. Review these warnings in plan mode to understand which cost center each multi-team user will be assigned to.
+**This is expected**: The tool warns you when a user belongs to multiple teams. By default, users already in cost centers will be skipped to avoid conflicts. Use `--ignore-current-cost-center` if you need to move users between cost centers. Review these warnings in plan mode to understand assignment behavior.
 
 ## Best Practices
 

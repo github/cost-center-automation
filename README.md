@@ -96,12 +96,14 @@ Set up GitHub Actions for automatic syncing every 6 hours - see [Automation](#au
 - Enterprise scope: Sync all teams across the enterprise
 - Automatic cost center creation with bracket notation naming
 - Full sync mode (removes users who left teams)
-- Single assignment (multi-team users get last team's assignment)
+- Single assignment (existing cost center assignments are preserved by default)
 
 ### Additional Features
 - 🔄 **Plan/Apply execution**: Preview changes before applying
 - 📊 **Enhanced logging**: Real-time success/failure tracking
-- 🐳 **Container ready**: Dockerfile and docker-compose included
+- � **Smart user handling**: Skips users already in cost centers by default
+- ⚡ **Override option**: `--ignore-current-cost-center` to move users between cost centers
+- �🐳 **Container ready**: Dockerfile and docker-compose included
 - ⚙️ **Automation examples**: GitHub Actions, cron, and shell scripts
 - 🔧 **Auto-creation**: Automatic cost center creation (no manual UI setup)
 
@@ -217,6 +219,9 @@ python main.py --assign-cost-centers --mode apply
 # Apply without confirmation (automation)
 python main.py --create-cost-centers --assign-cost-centers --mode apply --yes
 
+# Move users between cost centers if needed
+python main.py --assign-cost-centers --ignore-current-cost-center --mode apply
+
 # Incremental mode (only new users, for cron jobs)
 python main.py --assign-cost-centers --incremental --mode apply --yes
 ```
@@ -233,8 +238,52 @@ python main.py --teams-mode --assign-cost-centers --mode apply
 # Apply without confirmation (automation)
 python main.py --teams-mode --assign-cost-centers --mode apply --yes
 
+# Move users between cost centers if needed
+python main.py --teams-mode --assign-cost-centers --ignore-current-cost-center --mode apply
+
 # Generate summary report
 python main.py --teams-mode --summary-report
+```
+
+**Smart User Handling:**
+- By default, users already in cost centers are skipped to avoid conflicts
+- Use `--ignore-current-cost-center` to move users between cost centers
+
+### Cache Management (Performance Optimization)
+
+The tool automatically caches cost center mappings to improve performance by avoiding redundant API calls:
+
+```bash
+# View cache statistics
+python main.py --cache-stats
+
+# Clear the entire cache
+python main.py --clear-cache
+
+# Remove expired cache entries
+python main.py --cache-cleanup
+
+# Cache is automatically used during normal operations
+python main.py --teams-mode --assign-cost-centers --mode plan  # Uses cache
+```
+
+**Cache Benefits:**
+- 📈 **Significant performance improvement** for teams with many cost centers
+- 🔄 **Automatic expiration** (24 hours by default) ensures data freshness
+- 💾 **GitHub Actions cache integration** for CI/CD workflows
+- 🎯 **Smart invalidation** when configuration changes
+
+**Cache Statistics Example:**
+```
+===== Cost Center Cache Statistics =====
+Cache file: .cache/cost_centers.json
+Total entries: 25
+Valid entries: 23
+Expired entries: 2
+Cache TTL: 24.0 hours
+Last updated: 2024-01-15T10:30:45.123456
+Effective hit rate: 92.0%
+==========================================
 ```
 
 **Note:** Incremental mode is NOT supported in Teams Mode. All team members are processed every run.

@@ -5,21 +5,28 @@ Teams-based Cost Center Manager for GitHub Teams integration.
 import logging
 from typing import Dict, List, Set, Tuple, Optional
 
+from .cost_center_cache import CostCenterCache
+
 
 class TeamsCostCenterManager:
     """Manages cost center assignments based on GitHub team membership."""
     
-    def __init__(self, config, github_manager):
+    def __init__(self, config, github_manager, create_budgets: bool = False):
         """
         Initialize the teams cost center manager.
         
         Args:
             config: ConfigManager instance with teams configuration
             github_manager: GitHubCopilotManager instance for API calls
+            create_budgets: Whether to create budgets for new cost centers (requires unreleased APIs)
         """
         self.config = config
         self.github_manager = github_manager
+        self.create_budgets = create_budgets
         self.logger = logging.getLogger(__name__)
+        
+        # Initialize cost center cache
+        self.cost_center_cache = CostCenterCache()
         
         # Teams configuration
         self.teams_scope = config.teams_scope  # "organization" or "enterprise"
@@ -31,7 +38,7 @@ class TeamsCostCenterManager:
         # Cache for team data
         self.teams_cache: Dict[str, List[Dict]] = {}  # org/enterprise -> list of teams
         self.members_cache: Dict[str, List[str]] = {}  # "org/team_slug" or "team_slug" -> list of usernames
-        self.cost_center_cache: Dict[str, str] = {}  # "org/team_slug" or "team_slug" -> cost_center_id
+        self.team_cost_center_cache: Dict[str, str] = {}  # "org/team_slug" or "team_slug" -> cost_center_id
         
         self.logger.info(f"Initialized TeamsCostCenterManager in '{self.teams_mode}' mode, scope '{self.teams_scope}'")
         if self.teams_scope == "organization":
@@ -127,8 +134,8 @@ class TeamsCostCenterManager:
             team_key = f"{org_or_enterprise}/{team_slug}"
         
         # Check cache first
-        if team_key in self.cost_center_cache:
-            return self.cost_center_cache[team_key]
+        if team_key in self.team_cost_center_cache:
+            return self.team_cost_center_cache[team_key]
         
         cost_center = None
         
@@ -157,7 +164,7 @@ class TeamsCostCenterManager:
             return None
         
         # Cache the result
-        self.cost_center_cache[team_key] = cost_center
+        self.team_cost_center_cache[team_key] = cost_center
         return cost_center
     
     def build_team_assignments(self) -> Dict[str, List[Tuple[str, str, str]]]:
@@ -165,7 +172,7 @@ class TeamsCostCenterManager:
         Build complete team-to-members mapping with cost centers.
         
         IMPORTANT: Users can only belong to ONE cost center. If a user is in multiple teams,
-        they will be assigned to the LAST team's cost center that is processed.
+        assignment depends on their current cost center status (existing assignments are preserved by default).
         
         Returns:
             Dict mapping cost_center -> list of (username, org, team_slug) tuples
@@ -229,12 +236,12 @@ class TeamsCostCenterManager:
                     f"{len(members)} members"
                 )
         
-        # Report on multi-team users (conflicts where last assignment wins)
+        # Report on multi-team users (conflicts where assignment depends on current cost center status)
         multi_team_users = {user: teams for user, teams in user_team_map.items() if len(teams) > 1}
         if multi_team_users:
             self.logger.warning(
                 f"⚠️  Found {len(multi_team_users)} users who are members of multiple teams. "
-                "Each user can only belong to ONE cost center - the LAST team processed will determine their assignment."
+                "Each user can only belong to ONE cost center - assignment depends on their current cost center status."
             )
             for username, team_cc_list in list(multi_team_users.items())[:10]:  # Show first 10
                 teams_str = ", ".join([f"{team}" for team, cc in team_cc_list])
@@ -266,6 +273,7 @@ class TeamsCostCenterManager:
     def ensure_cost_centers_exist(self, cost_centers: Set[str]) -> Dict[str, str]:
         """
         Ensure all required cost centers exist, creating them if needed.
+        Uses caching to avoid redundant API calls for performance.
         
         Args:
             cost_centers: Set of cost center names or IDs
@@ -280,24 +288,56 @@ class TeamsCostCenterManager:
         
         self.logger.info(f"Ensuring {len(cost_centers)} cost centers exist...")
         
+        # Check cache stats
+        cache_stats = self.cost_center_cache.get_cache_stats()
+        self.logger.debug(f"Cache stats: {cache_stats['valid_entries']}/{cache_stats['total_entries']} valid entries")
+        
         cost_center_map = {}
+        cache_hits = 0
+        api_calls = 0
         
         for cost_center_name in cost_centers:
-            # Try to create the cost center (will return existing ID if already exists)
-            cost_center_id = self.github_manager.create_cost_center(cost_center_name)
+            # Check cache first
+            cached_id = self.cost_center_cache.get_cost_center_id(cost_center_name)
             
-            if cost_center_id:
-                cost_center_map[cost_center_name] = cost_center_id
-                self.logger.debug(f"Cost center '{cost_center_name}' → ID: {cost_center_id}")
+            if cached_id:
+                cost_center_map[cost_center_name] = cached_id
+                cache_hits += 1
+                self.logger.debug(f"Cache hit: '{cost_center_name}' → {cached_id}")
             else:
-                self.logger.error(f"Failed to create/find cost center: {cost_center_name}")
-                # Use the name as fallback (will likely fail assignment but won't crash)
-                cost_center_map[cost_center_name] = cost_center_name
+                # Cache miss - make API call
+                api_calls += 1
+                cost_center_id = self.github_manager.create_cost_center(cost_center_name)
+                
+                if cost_center_id:
+                    cost_center_map[cost_center_name] = cost_center_id
+                    # Cache the result for future use
+                    self.cost_center_cache.set_cost_center_id(cost_center_name, cost_center_id)
+                    self.logger.debug(f"API call: '{cost_center_name}' → {cost_center_id} (cached)")
+                    
+                    # Create budget if requested (and if this is a newly created cost center)
+                    if self.create_budgets:
+                        self.logger.info(f"Creating budget for cost center: {cost_center_name}")
+                        budget_success = self.github_manager.create_cost_center_budget(cost_center_id, cost_center_name)
+                        if budget_success:
+                            self.logger.info(f"Successfully created budget for: {cost_center_name}")
+                        else:
+                            self.logger.warning(f"Failed to create budget for: {cost_center_name}")
+                else:
+                    self.logger.error(f"Failed to create/find cost center: {cost_center_name}")
+                    # Use the name as fallback (will likely fail assignment but won't crash)
+                    cost_center_map[cost_center_name] = cost_center_name
         
-        self.logger.info(f"Successfully resolved {len(cost_center_map)} cost centers")
+        # Log performance metrics
+        total_requests = cache_hits + api_calls
+        cache_hit_rate = (cache_hits / total_requests * 100) if total_requests > 0 else 0
+        
+        self.logger.info(f"Cost center resolution complete: {len(cost_center_map)} resolved")
+        self.logger.info(f"Performance: {cache_hits} cache hits, {api_calls} API calls ({cache_hit_rate:.1f}% cache hit rate)")
+        
         return cost_center_map
     
-    def sync_team_assignments(self, mode: str = "plan") -> Dict[str, Dict[str, bool]]:
+    def sync_team_assignments(self, mode: str = "plan", ignore_current_cost_center: bool = False) -> Dict[str, Dict[str, bool]]:
         """
         Sync team-based cost center assignments to GitHub Enterprise.
         
@@ -364,7 +404,7 @@ class TeamsCostCenterManager:
         
         # Apply mode: actually sync
         self.logger.info("Syncing team-based assignments to GitHub Enterprise...")
-        results = self.github_manager.bulk_update_cost_center_assignments(id_based_assignments)
+        results = self.github_manager.bulk_update_cost_center_assignments(id_based_assignments, ignore_current_cost_center)
         
         # Always check for users no longer in teams (detection), but only remove if configured
         self.logger.info("Checking for users in cost centers who are no longer in teams...")

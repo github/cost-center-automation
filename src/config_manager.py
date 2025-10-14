@@ -63,16 +63,15 @@ class ConfigManager:
             if not self.github_enterprise:
                 raise ValueError("GitHub enterprise must be configured (set env GITHUB_ENTERPRISE or update config.github.enterprise)")
             
-            # Export configuration
-            export_config = config_data.get("export", {})
-            self.export_dir = export_config.get("directory", "exports")
-            self.export_formats = export_config.get("formats", ["csv", "excel"])
+            # Set up working directory paths
+            self.export_dir = config_data.get("export_dir", "exports")
+            self.log_file = config_data.get("log_file")
+            self.log_level = config_data.get("log_level", "INFO")
             
-            # Logging configuration
-            logging_config = config_data.get("logging", {})
-            self.log_level = logging_config.get("level", "INFO")
-            self.log_file = logging_config.get("file", "logs/copilot_manager.log")
-            
+            # Timestamp file for incremental runs
+            if self.export_dir:
+                self.timestamp_file = Path(self.export_dir) / ".last_run_timestamp"
+                
             # Cost center configuration
             cost_center_config = config_data.get("cost_centers", {})
             self.no_prus_cost_center_id = (
@@ -105,7 +104,7 @@ class ConfigManager:
             
             # Incremental processing configuration
             self.enable_incremental = cost_center_config.get("enable_incremental", False)
-            self.timestamp_file = Path(self.export_dir) / ".last_run_timestamp"
+
             
             # Teams integration configuration
             teams_config = config_data.get("teams", {})
@@ -306,6 +305,8 @@ class ConfigManager:
         except Exception as e:
             self.logger.error(f"Failed to load last run timestamp: {e}")
             return None
+    
+
 
     def get_config_summary(self) -> Dict[str, Any]:
         """Get a summary of current configuration."""
