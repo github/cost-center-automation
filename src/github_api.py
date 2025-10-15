@@ -53,10 +53,24 @@ class GitHubCopilotManager:
         
         return session
     
-    def _make_request(self, url: str, params: Optional[Dict] = None) -> Dict:
+    def _make_request(self, url: str, params: Optional[Dict] = None, method: str = 'GET', 
+                     json: Optional[Dict] = None, custom_headers: Optional[Dict] = None) -> Dict:
         """Make a GitHub API request with error handling."""
         try:
-            response = self.session.get(url, params=params)
+            # Prepare headers
+            headers = {}
+            if custom_headers:
+                headers.update(custom_headers)
+            
+            # Make the request based on method
+            if method.upper() == 'GET':
+                response = self.session.get(url, params=params, headers=headers)
+            elif method.upper() == 'POST':
+                response = self.session.post(url, params=params, json=json, headers=headers)
+            elif method.upper() == 'DELETE':
+                response = self.session.delete(url, params=params, json=json, headers=headers)
+            else:
+                raise ValueError(f"Unsupported HTTP method: {method}")
             
             # Handle rate limiting
             if response.status_code == 429:
@@ -64,7 +78,7 @@ class GitHubCopilotManager:
                 wait_time = reset_time - int(time.time()) + 1
                 self.logger.warning(f"Rate limit hit. Waiting {wait_time} seconds...")
                 time.sleep(wait_time)
-                return self._make_request(url, params)
+                return self._make_request(url, params, method, json, custom_headers)
             
             response.raise_for_status()
             return response.json()
@@ -145,34 +159,7 @@ class GitHubCopilotManager:
             self.logger.info(f"Unique Copilot users after de-duplication: {len(unique_users)}")
         return unique_users
     
-    def filter_users_by_timestamp(self, users: List[Dict], since_timestamp: datetime) -> List[Dict]:
-        """Filter users to only include those created after the given timestamp."""
-        filtered_users = []
-        
-        for user in users:
-            created_at_str = user.get('created_at')
-            if not created_at_str:
-                # If no creation timestamp, include the user (safer approach)
-                filtered_users.append(user)
-                continue
-            
-            try:
-                # Parse the GitHub timestamp (e.g., "2025-04-15T23:45:31-05:00")
-                created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
-                
-                if created_at > since_timestamp:
-                    filtered_users.append(user)
-                    self.logger.debug(f"Including user {user.get('login')} (created: {created_at_str})")
-                else:
-                    self.logger.debug(f"Skipping user {user.get('login')} (created: {created_at_str} <= {since_timestamp})")
-                    
-            except Exception as e:
-                self.logger.warning(f"Failed to parse timestamp for user {user.get('login')}: {e}")
-                # Include user if timestamp parsing fails (safer approach)
-                filtered_users.append(user)
-        
-        self.logger.info(f"Filtered {len(users)} users to {len(filtered_users)} users created after {since_timestamp}")
-        return filtered_users
+
     
     def get_user_details(self, username: str) -> Dict:
         """Get detailed information for a specific user."""
@@ -183,10 +170,16 @@ class GitHubCopilotManager:
     
     # Removed get_copilot_cost_center_assignments as the tool now always assigns deterministically
     
-    def add_users_to_cost_center(self, cost_center_id: str, usernames: List[str]) -> Dict[str, bool]:
+    def add_users_to_cost_center(self, cost_center_id: str, usernames: List[str], ignore_current_cost_center: bool = False) -> Dict[str, bool]:
         """Add multiple users (up to 50) to a specific cost center.
         
-        Only adds users who are not already in the cost center to avoid unnecessary API calls.
+        By default, skips users who already belong to any cost center. Use ignore_current_cost_center=True
+        to add users regardless of their current cost center membership.
+        
+        Args:
+            cost_center_id: Target cost center ID
+            usernames: List of usernames to add
+            ignore_current_cost_center: If True, add users even if they belong to another cost center
         
         Returns:
             Dict mapping username -> success status for detailed logging
@@ -199,24 +192,70 @@ class GitHubCopilotManager:
             self.logger.error(f"Cannot add more than 50 users at once. Got {len(usernames)} users.")
             return {username: False for username in usernames}
         
-        # Get current members to avoid re-adding users who are already assigned
-        current_members = self.get_cost_center_members(cost_center_id)
-        current_members_set = set(current_members)
+        users_to_add = []
+        users_already_in_target = []
+        users_in_other_cost_center = []
         
-        # Filter to only users who need to be added
-        users_to_add = [u for u in usernames if u not in current_members_set]
-        users_already_assigned = [u for u in usernames if u in current_members_set]
+        if ignore_current_cost_center:
+            # Fast path: add all users without checking current membership
+            users_to_add = usernames.copy()
+            self.logger.debug(f"ignore_current_cost_center=True: Adding all {len(users_to_add)} users without membership checks")
+        else:
+            # OPTIMIZED safe path: bulk comparison + targeted individual checks
+            self.logger.debug(f"ignore_current_cost_center=False: Optimized membership checking for {len(usernames)} users")
+            
+            # Step 1: Bulk check who's already in the target cost center
+            current_members_in_target = set(self.get_cost_center_members(cost_center_id))
+            users_in_target = [u for u in usernames if u in current_members_in_target]
+            users_not_in_target = [u for u in usernames if u not in current_members_in_target]
+            
+            self.logger.debug(f"Bulk optimization: {len(users_in_target)} already in target cost center, "
+                             f"{len(users_not_in_target)} need individual membership check")
+            
+            # Step 2: Users already in target cost center - mark as already assigned
+            for username in users_in_target:
+                users_already_in_target.append(username)
+                self.logger.debug(f"User {username} already in target cost center {cost_center_id}")
+            
+            # Step 3: Individual checks only for users NOT in target cost center
+            for username in users_not_in_target:
+                existing_membership = self.check_user_cost_center_membership(username)
+                
+                if existing_membership:
+                    # User is in a different cost center
+                    existing_cost_center_name = existing_membership.get('cost_center_name', existing_membership.get('cost_center_id'))
+                    users_in_other_cost_center.append((username, existing_cost_center_name))
+                    self.logger.info(f"Skipping {username} - already in cost center '{existing_cost_center_name}' (use --check-current-cost-center to override)")
+                else:
+                    # User is not in any cost center, safe to add
+                    users_to_add.append(username)
         
-        # Log users who are already assigned
-        if users_already_assigned:
-            self.logger.debug(f"Skipping {len(users_already_assigned)} users already in cost center {cost_center_id}: {users_already_assigned}")
+        # Log summary of what we found
+        if users_already_in_target:
+            self.logger.debug(f"Skipping {len(users_already_in_target)} users already in target cost center {cost_center_id}")
         
-        # If no users need to be added, return success for all
+        if users_in_other_cost_center:
+            self.logger.info(f"Skipping {len(users_in_other_cost_center)} users already in other cost centers:")
+            for username, cost_center_name in users_in_other_cost_center:
+                self.logger.info(f"  - {username} → currently in '{cost_center_name}'")
+        
+        # If no users need to be added, return appropriate status
         if not users_to_add:
-            self.logger.info(f"All {len(usernames)} users already assigned to cost center {cost_center_id}")
-            return {username: True for username in usernames}
+            results = {}
+            # Users already in target cost center get success status
+            for username in users_already_in_target:
+                results[username] = True
+            # Users in other cost centers get failure status (unless ignoring)
+            for username, _ in users_in_other_cost_center:
+                results[username] = False
+            
+            if users_already_in_target and not users_in_other_cost_center:
+                self.logger.info(f"All {len(usernames)} users already assigned to cost center {cost_center_id}")
+            
+            return results
         
-        self.logger.info(f"Adding {len(users_to_add)} new users to cost center {cost_center_id} (skipping {len(users_already_assigned)} already assigned)")
+        total_skipped = len(users_already_in_target) + len(users_in_other_cost_center)
+        self.logger.info(f"Adding {len(users_to_add)} users to cost center {cost_center_id} (skipping {total_skipped} already assigned or in other cost centers)")
             
         url = f"{self.base_url}/enterprises/{self.enterprise_name}/settings/billing/cost-centers/{cost_center_id}/resource"
         
@@ -248,32 +287,44 @@ class GitHubCopilotManager:
                 for username in users_to_add:
                     self.logger.info(f"   ✅ {username} → {cost_center_id}")
                 
-                # Return success for all users (both added and already assigned)
-                return {username: True for username in usernames}
+                # Return success for users who were added and those already in target
+                results = {username: True for username in users_to_add + users_already_in_target}
+                # Users in other cost centers get failure status (unless they were moved)
+                for username, _ in users_in_other_cost_center:
+                    if username not in users_to_add:  # Wasn't moved
+                        results[username] = False
+                return results
             else:
                 self.logger.error(f"❌ Failed to add users to cost center {cost_center_id}: {response.status_code} {response.text}")
                 for username in users_to_add:
                     self.logger.error(f"   ❌ {username} → {cost_center_id} (API Error)")
-                # Failed users get False, already assigned users get True
+                # Failed users get False, users already in target get True
                 results = {username: False for username in users_to_add}
-                results.update({username: True for username in users_already_assigned})
+                results.update({username: True for username in users_already_in_target})
+                # Users in other cost centers get failure status
+                for username, _ in users_in_other_cost_center:
+                    results[username] = False
                 return results
                 
         except requests.exceptions.RequestException as e:
             self.logger.error(f"❌ Error adding users to cost center {cost_center_id}: {str(e)}")
             for username in users_to_add:
                 self.logger.error(f"   ❌ {username} → {cost_center_id} (Network Error)")
-            # Failed users get False, already assigned users get True
+            # Failed users get False, users already in target get True
             results = {username: False for username in users_to_add}
-            results.update({username: True for username in users_already_assigned})
+            results.update({username: True for username in users_already_in_target})
+            # Users in other cost centers get failure status
+            for username, _ in users_in_other_cost_center:
+                results[username] = False
             return results
 
-    def bulk_update_cost_center_assignments(self, cost_center_assignments: Dict[str, List[str]]) -> Dict[str, Dict[str, bool]]:
+    def bulk_update_cost_center_assignments(self, cost_center_assignments: Dict[str, List[str]], ignore_current_cost_center: bool = False) -> Dict[str, Dict[str, bool]]:
         """
         Bulk update cost center assignments for multiple users.
         
         Args:
             cost_center_assignments: Dict mapping cost_center_id -> list of usernames
+            ignore_current_cost_center: If True, add users even if they belong to another cost center
             
         Returns:
             Dict mapping cost_center_id -> Dict mapping username -> success status
@@ -296,7 +347,7 @@ class GitHubCopilotManager:
             cost_center_results = {}
             for i, batch in enumerate(batches, 1):
                 self.logger.info(f"Processing batch {i}/{len(batches)} ({len(batch)} users) for cost center {cost_center_id}")
-                batch_results = self.add_users_to_cost_center(cost_center_id, batch)
+                batch_results = self.add_users_to_cost_center(cost_center_id, batch, ignore_current_cost_center)
                 cost_center_results.update(batch_results)
                 
                 batch_success_count = sum(1 for success in batch_results.values() if success)
@@ -787,3 +838,99 @@ class GitHubCopilotManager:
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Error removing users from cost center {cost_center_id}: {str(e)}")
             return {user: False for user in usernames}
+    
+    def check_user_cost_center_membership(self, username: str) -> Optional[Dict]:
+        """
+        Check if a user belongs to any cost center.
+        
+        Args:
+            username: The username to check
+            
+        Returns:
+            Dict with cost center info if user belongs to one, None if user is not in any cost center
+            Format: {"cost_center_id": "abc-123", "cost_center_name": "Team Engineering"}
+        """
+        if not self.use_enterprise or not self.enterprise_name:
+            self.logger.error("Cost center operations only available for GitHub Enterprise")
+            return None
+        
+        url = f"{self.base_url}/enterprises/{self.enterprise_name}/settings/billing/cost-centers/memberships"
+        params = {
+            "resource_type": "user",
+            "name": username
+        }
+        
+        try:
+            response_data = self._make_request(url, params=params)
+            
+            # The API returns {"resource": {...}, "memberships": [...]}
+            # Extract the memberships list
+            memberships = response_data.get('memberships', []) if response_data else []
+            
+            if memberships and len(memberships) > 0:
+                membership_info = memberships[0]  # User should only belong to one cost center
+                cost_center = membership_info.get('cost_center', {})
+                
+                # Extract the cost center info in the format our code expects
+                result = {
+                    'cost_center_id': cost_center.get('id'),
+                    'cost_center_name': cost_center.get('name')
+                }
+                
+                self.logger.debug(f"User {username} belongs to cost center: {result.get('cost_center_id')}")
+                return result
+            else:
+                self.logger.debug(f"User {username} does not belong to any cost center")
+                return None
+                
+        except requests.exceptions.RequestException as e:
+            self.logger.debug(f"Failed to check cost center membership for {username}: {str(e)}")
+            return None
+    
+    def create_cost_center_budget(self, cost_center_id: str, cost_center_name: str) -> bool:
+        """
+        Create a budget for a cost center using the GitHub Enterprise Budgets API.
+        
+        This method uses unreleased GitHub APIs and should only be used when the 
+        --create-budgets flag is explicitly passed.
+        
+        Args:
+            cost_center_id: UUID of the cost center to create a budget for
+            cost_center_name: Name of the cost center (used for logging only)
+            
+        Returns:
+            True if budget was created successfully, False otherwise
+        """
+        if not self.use_enterprise or not self.enterprise_name:
+            self.logger.error("Budget creation only available for GitHub Enterprise")
+            return False
+        
+        url = f"{self.base_url}/enterprises/{self.enterprise_name}/settings/billing/budgets"
+        
+        payload = {
+            "budget_type": "SkuPricing",
+            "budget_product_sku": "copilot_premium_request",
+            "budget_scope": "cost_center",
+            "budget_amount": 0,
+            "prevent_further_usage": True,
+            "budget_entity_name": cost_center_id,  # Use UUID instead of name
+            "budget_alerting": {
+                "will_alert": False,
+                "alert_recipients": []
+            }
+        }
+        
+        headers = {
+            "accept": "application/vnd.github+json",
+            "x-github-api-version": "2022-11-28",
+            "content-type": "application/json"
+        }
+        
+        try:
+            response = self._make_request(url, method='POST', json=payload, custom_headers=headers)
+            self.logger.info(f"Successfully created budget for cost center: {cost_center_name} (ID: {cost_center_id})")
+            return True
+            
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Failed to create budget for cost center '{cost_center_name}' (ID: {cost_center_id}): {str(e)}")
+            return False

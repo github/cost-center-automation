@@ -4,8 +4,26 @@ Logger setup and configuration.
 
 import logging
 import logging.config
+import sys
 from pathlib import Path
 import yaml
+
+
+class BrokenPipeHandler(logging.StreamHandler):
+    """Custom logging handler that gracefully handles broken pipe errors."""
+    
+    def emit(self, record):
+        """Emit a record, handling broken pipe errors gracefully."""
+        try:
+            super().emit(record)
+        except BrokenPipeError:
+            # Pipe was closed (e.g., output piped to head), exit gracefully
+            sys.exit(0)
+        except OSError as e:
+            if e.errno == 32:  # Broken pipe
+                sys.exit(0)
+            else:
+                raise
 
 
 def setup_logging(level=logging.INFO, config_file=None):
@@ -38,7 +56,7 @@ def setup_logging(level=logging.INFO, config_file=None):
             'handlers': {
                 'console': {
                     'level': 'INFO',
-                    'class': 'logging.StreamHandler',
+                    'class': 'src.logger_setup.BrokenPipeHandler',
                     'formatter': 'standard',
                     'stream': 'ext://sys.stdout'
                 },

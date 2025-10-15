@@ -83,6 +83,7 @@ teams:
 - ✅ Enterprise team sync (no need to list organizations)
 - ✅ Automatic cost center creation per team
 - ✅ Full sync mode (users removed when they leave teams)
+- ✅ Smart handling (skips users already in other cost centers)
 
 ## Step 4: Test Your Setup
 
@@ -169,7 +170,19 @@ teams:
     "mobile-android": "Engineering: Mobile"  # Multiple teams → same cost center
 ```
 
-### Option 4: Custom Schedule
+### Option 4: Force Move Users Between Cost Centers
+
+If you need to move users from other cost centers:
+
+```yaml
+# In your workflow, change the run command to:
+run: |
+  python main.py --teams-mode --assign-cost-centers --mode apply --yes --ignore-current-cost-center
+```
+
+⚠️ **Use carefully:** This will move users from any existing cost center to match team membership.
+
+### Option 5: Custom Schedule
 
 Adjust the cron schedule in your workflow:
 
