@@ -1,5 +1,10 @@
 # GitHub Cost Center Automation
 
+**tl;dr:**
+- Automate cost center creation and syncing with enterprise teams, org-based teams, or for every Copilot user in your enterprise
+- Configure Actions workflow to keep cost centers in sync
+- Coming soon: automatically create budgets for each cost center
+
 Automate GitHub Copilot license cost center assignments for your enterprise with two powerful modes:
 
 - **PRU-Based Mode**: Simple two-tier model (PRU overages allowed/not allowed)
@@ -375,7 +380,3 @@ Check `logs/populate_cost_centers.log` for detailed traces. Use `--verbose` for 
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE) file for details.
-
----
-
-**Latest Features:** Teams-based assignment (organization & enterprise scope), full sync mode (removes users who left teams), bracket notation naming, enhanced logging, incremental processing
