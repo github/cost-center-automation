@@ -349,20 +349,6 @@ docker compose up -d --build
 
 See `automation/update_cost_centers.sh` for the included automation script.
 
-## Keeping Up-to-Date
-
-This repository includes automatic template sync from `github/cost-center-automation`.
-
-**Setup:**
-1. Create a PAT with `Contents: Write` and `Pull requests: Write`
-2. Add as secret: `TEMPLATE_SYNC_TOKEN`
-3. Automatic sync runs every Monday, creating PRs with updates
-
-**What's synced:** Code, workflows, docs, dependencies  
-**What's protected:** `config/config.yaml`, `.syncignore` files
-
-Manual trigger: **Actions** → "Sync from template" → "Run workflow"
-
 ## Troubleshooting
 
 | Issue | Solution |
