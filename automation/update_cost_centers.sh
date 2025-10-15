@@ -1,6 +1,7 @@
 #!/bin/bash
 
-# GitHub Copilot Cost Center Update Script
+#!/bin/bash
+# GitHub Cost Center Update Script
 # This script runs the cost center assignment and exports data
 # Usage: ./update_cost_centers.sh [full]
 #   - Default: Incremental processing (only new users since last run)

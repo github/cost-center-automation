@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-GitHub Copilot Cost Center Management Script
+GitHub Cost Center Management Script
 
 Automates cost center assignments for GitHub Copilot users with two operational modes:
 
@@ -51,7 +51,7 @@ def setup_signal_handlers():
 def parse_arguments():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="GitHub Copilot Cost Center Management - PRU-based or Teams-based assignment",
+        description="GitHub Cost Center Management - PRU-based or Teams-based assignment",
         epilog="""
 Examples:
   # PRU-based mode (default)
@@ -217,7 +217,25 @@ def _handle_teams_mode(args, config: ConfigManager, teams_manager, logger) -> No
     
     # Exit early if only showing config
     if args.show_config and not any([args.assign_cost_centers, args.summary_report]):
+        logger.info("Configuration displayed. Use --mode plan or --mode apply to process teams.")
         return
+    
+    # If no action flags specified, default behavior depends on mode
+    if not any([args.assign_cost_centers, args.summary_report]):
+        if args.mode == "apply":
+            # In apply mode, user likely wants to assign cost centers
+            print("\n" + "="*60)
+            print("ℹ️  APPLY MODE - Processing cost center assignments")
+            print("="*60)
+            print("💡 Tip: Use --mode plan to preview changes without applying them.\n")
+            args.assign_cost_centers = True
+        else:
+            # In plan mode, show plan
+            print("\n" + "="*60)
+            print("ℹ️  PLAN MODE - Showing what would be done (no changes)")
+            print("="*60)
+            print("💡 Tip: Use --mode apply --yes to actually sync the assignments.\n")
+            args.assign_cost_centers = True  # Enable preview in plan mode too!
     
     # Generate summary report if requested
     if args.summary_report:
@@ -247,10 +265,16 @@ def _handle_teams_mode(args, config: ConfigManager, teams_manager, logger) -> No
     
     # Assign cost centers if requested
     if args.assign_cost_centers:
-        logger.info("Processing team-based cost center assignments...")
-        
+        print("\n" + "="*60)
         if args.mode == "plan":
+            print("📋 PLAN MODE - Preview Only (No Changes)")
+            print("="*60)
             logger.info("MODE=plan (no changes will be made)")
+        else:
+            print("⚡ APPLY MODE - Will Make Changes")
+            print("="*60)
+        
+        logger.info("Processing team-based cost center assignments...")
         
         # Build and optionally sync assignments
         if args.mode == "plan":

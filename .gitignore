@@ -89,3 +89,9 @@ exports/*
 # Temporary files
 tmp/
 temp/
+
+# Local utility scripts (not for production)
+scripts/cleanup_*.py
+scripts/test_*.py
+scripts/check_*.py
+scripts/README_cleanup.md
