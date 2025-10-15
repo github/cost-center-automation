@@ -1,4 +1,4 @@
-# GitHub Copilot Cost Center Automation
+# GitHub Cost Center Automation
 
 Automate GitHub Copilot license cost center assignments for your enterprise with two powerful modes:
 

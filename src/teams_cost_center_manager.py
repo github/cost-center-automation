@@ -4,8 +4,9 @@ Teams-based Cost Center Manager for GitHub Teams integration.
 
 import logging
 from typing import Dict, List, Set, Tuple, Optional
+from .github_api import BudgetsAPIUnavailableError
 
-from .cost_center_cache import CostCenterCache
+
 
 
 class TeamsCostCenterManager:
@@ -25,8 +26,7 @@ class TeamsCostCenterManager:
         self.create_budgets = create_budgets
         self.logger = logging.getLogger(__name__)
         
-        # Initialize cost center cache
-        self.cost_center_cache = CostCenterCache()
+
         
         # Teams configuration
         self.teams_scope = config.teams_scope  # "organization" or "enterprise"
@@ -270,72 +270,117 @@ class TeamsCostCenterManager:
         
         return assignments
     
-    def ensure_cost_centers_exist(self, cost_centers: Set[str]) -> Dict[str, str]:
+    def _preload_active_cost_centers(self) -> Dict[str, str]:
+        """
+        Preload all active cost centers from the enterprise for performance optimization.
+        
+        Returns:
+            Dict mapping cost center name -> cost center ID
+        """
+        try:
+            active_centers_map = self.github_manager.get_all_active_cost_centers()
+            self.logger.info(f"Preloaded {len(active_centers_map)} active cost centers for performance optimization")
+            return active_centers_map
+        except Exception as e:
+            self.logger.warning(f"Failed to preload cost centers: {e}")
+            self.logger.info("Falling back to individual cost center creation approach")
+            return {}
+    
+    def ensure_cost_centers_exist(self, cost_centers: Set[str]) -> Tuple[Dict[str, str], Set[str]]:
         """
         Ensure all required cost centers exist, creating them if needed.
-        Uses caching to avoid redundant API calls for performance.
+        Uses preload optimization with fallback to individual creation for performance.
         
         Args:
             cost_centers: Set of cost center names or IDs
             
         Returns:
-            Dict mapping original name/ID -> actual cost center ID
+            Tuple of:
+            - Dict mapping original name/ID -> actual cost center ID
+            - Set of cost center IDs that were newly created in this run
         """
         if not self.auto_create:
             self.logger.info("Auto-creation disabled, assuming cost center IDs are valid")
-            # Return identity mapping (assume they're already IDs)
-            return {cc: cc for cc in cost_centers}
+            # Return identity mapping (assume they're already IDs) and empty set for newly created
+            return {cc: cc for cc in cost_centers}, set()
         
         self.logger.info(f"Ensuring {len(cost_centers)} cost centers exist...")
         
-        # Check cache stats
-        cache_stats = self.cost_center_cache.get_cache_stats()
-        self.logger.debug(f"Cache stats: {cache_stats['valid_entries']}/{cache_stats['total_entries']} valid entries")
-        
         cost_center_map = {}
-        cache_hits = 0
+        newly_created_ids = set()
+        preload_hits = 0
         api_calls = 0
         
+        # Step 1: Preload all active cost centers for performance optimization
+        self.logger.info(f"Preloading active cost centers for {len(cost_centers)} cost centers...")
+        active_centers_map = self._preload_active_cost_centers()
+        
+        # Step 2: Check preloaded map for existing cost centers
+        still_need_creation = set()
         for cost_center_name in cost_centers:
-            # Check cache first
-            cached_id = self.cost_center_cache.get_cost_center_id(cost_center_name)
-            
-            if cached_id:
-                cost_center_map[cost_center_name] = cached_id
-                cache_hits += 1
-                self.logger.debug(f"Cache hit: '{cost_center_name}' → {cached_id}")
-            else:
-                # Cache miss - make API call
-                api_calls += 1
-                cost_center_id = self.github_manager.create_cost_center(cost_center_name)
+            if cost_center_name in active_centers_map:
+                cost_center_id = active_centers_map[cost_center_name]
+                cost_center_map[cost_center_name] = cost_center_id
+                preload_hits += 1
+                self.logger.debug(f"Preload hit: '{cost_center_name}' → {cost_center_id}")
                 
-                if cost_center_id:
-                    cost_center_map[cost_center_name] = cost_center_id
-                    # Cache the result for future use
-                    self.cost_center_cache.set_cost_center_id(cost_center_name, cost_center_id)
-                    self.logger.debug(f"API call: '{cost_center_name}' → {cost_center_id} (cached)")
-                    
-                    # Create budget if requested (and if this is a newly created cost center)
-                    if self.create_budgets:
-                        self.logger.info(f"Creating budget for cost center: {cost_center_name}")
+                # If budget creation is enabled and cost center already exists, check/create budget
+                if self.create_budgets:
+                    self.logger.debug(f"Checking/creating budget for existing cost center: {cost_center_name}")
+                    try:
+                        budget_success = self.github_manager.create_cost_center_budget(cost_center_id, cost_center_name)
+                        if budget_success:
+                            self.logger.debug(f"Budget ready for: {cost_center_name}")
+                        else:
+                            self.logger.warning(f"Failed to ensure budget for: {cost_center_name}")
+                    except BudgetsAPIUnavailableError as e:
+                        self.logger.warning(f"Budgets API not available - skipping budget creation: {str(e)}")
+                        # Disable budget creation for remaining cost centers to avoid repeated errors
+                        self.create_budgets = False
+            else:
+                still_need_creation.add(cost_center_name)
+        
+        # Step 3: Create cost centers that don't exist yet
+        for cost_center_name in still_need_creation:
+            api_calls += 1
+            cost_center_id = self.github_manager.create_cost_center_with_preload_fallback(
+                cost_center_name, active_centers_map
+            )
+            
+            if cost_center_id:
+                cost_center_map[cost_center_name] = cost_center_id
+                newly_created_ids.add(cost_center_id)  # Track newly created cost center
+                self.logger.debug(f"API call: '{cost_center_name}' → {cost_center_id}")
+                
+                # Create budget if requested (and if this is a newly created cost center)
+                if self.create_budgets:
+                    self.logger.info(f"Creating budget for cost center: {cost_center_name}")
+                    try:
                         budget_success = self.github_manager.create_cost_center_budget(cost_center_id, cost_center_name)
                         if budget_success:
                             self.logger.info(f"Successfully created budget for: {cost_center_name}")
                         else:
                             self.logger.warning(f"Failed to create budget for: {cost_center_name}")
-                else:
-                    self.logger.error(f"Failed to create/find cost center: {cost_center_name}")
-                    # Use the name as fallback (will likely fail assignment but won't crash)
-                    cost_center_map[cost_center_name] = cost_center_name
+                    except BudgetsAPIUnavailableError as e:
+                        self.logger.warning(f"Budgets API not available - skipping budget creation: {str(e)}")
+                        # Disable budget creation for remaining cost centers to avoid repeated errors
+                        self.create_budgets = False
+            else:
+                self.logger.error(f"Failed to create/find cost center: {cost_center_name}")
+                # Use the name as fallback (will likely fail assignment but won't crash)
+                cost_center_map[cost_center_name] = cost_center_name
         
         # Log performance metrics
-        total_requests = cache_hits + api_calls
-        cache_hit_rate = (cache_hits / total_requests * 100) if total_requests > 0 else 0
+        total_requests = preload_hits + api_calls
+        preload_hit_rate = (preload_hits / total_requests * 100) if total_requests > 0 else 0
         
         self.logger.info(f"Cost center resolution complete: {len(cost_center_map)} resolved")
-        self.logger.info(f"Performance: {cache_hits} cache hits, {api_calls} API calls ({cache_hit_rate:.1f}% cache hit rate)")
+        self.logger.info(f"Performance: {preload_hits} preload hits, {api_calls} API calls ({preload_hit_rate:.1f}% preload hit rate)")
         
-        return cost_center_map
+        if newly_created_ids:
+            self.logger.debug(f"Newly created cost centers in this run: {len(newly_created_ids)} cost centers")
+        
+        return cost_center_map, newly_created_ids
     
     def sync_team_assignments(self, mode: str = "plan", ignore_current_cost_center: bool = False) -> Dict[str, Dict[str, bool]]:
         """
@@ -361,9 +406,10 @@ class TeamsCostCenterManager:
         if mode == "plan":
             # In plan mode, just use the names as-is (no actual creation)
             cost_center_id_map = {cc: cc for cc in cost_centers_needed}
+            newly_created_cost_center_ids = set()  # No creation in plan mode
             self.logger.info(f"Plan mode: Would ensure {len(cost_centers_needed)} cost centers exist")
         else:
-            cost_center_id_map = self.ensure_cost_centers_exist(cost_centers_needed)
+            cost_center_id_map, newly_created_cost_center_ids = self.ensure_cost_centers_exist(cost_centers_needed)
         
         # Convert assignments to use actual cost center IDs
         id_based_assignments: Dict[str, List[str]] = {}
@@ -411,6 +457,7 @@ class TeamsCostCenterManager:
         removed_user_results = self._remove_users_no_longer_in_teams(
             id_based_assignments, 
             cost_center_id_map, 
+            newly_created_cost_center_ids,
             remove=self.config.teams_remove_users_no_longer_in_teams
         )
         
@@ -425,6 +472,7 @@ class TeamsCostCenterManager:
     
     def _remove_users_no_longer_in_teams(self, expected_assignments: Dict[str, List[str]], 
                               cost_center_id_map: Dict[str, str],
+                              newly_created_cost_center_ids: Set[str],
                               remove: bool = True) -> Dict[str, Dict[str, bool]]:
         """
         Detect and optionally remove users who are no longer in teams from cost centers.
@@ -435,6 +483,7 @@ class TeamsCostCenterManager:
         Args:
             expected_assignments: Dict mapping cost_center_id -> list of expected usernames
             cost_center_id_map: Dict mapping cost_center_name -> cost_center_id
+            newly_created_cost_center_ids: Set of cost center IDs that were created in this run (skip these)
             remove: If True, remove users no longer in teams. If False, only detect and log.
             
         Returns:
@@ -444,9 +493,17 @@ class TeamsCostCenterManager:
         total_removed_users = 0
         total_successfully_removed = 0
         
-        self.logger.info(f"Checking {len(expected_assignments)} cost centers for users no longer in teams...")
+        # Filter out newly created cost centers - they can't have users who left teams yet
+        cost_centers_to_check = {cc_id: users for cc_id, users in expected_assignments.items() 
+                                if cc_id not in newly_created_cost_center_ids}
         
-        for cost_center_id, expected_users in expected_assignments.items():
+        skipped_newly_created = len(expected_assignments) - len(cost_centers_to_check)
+        if skipped_newly_created > 0:
+            self.logger.info(f"⚡ Performance optimization: Skipping {skipped_newly_created} newly created cost centers (no users could have left teams yet)")
+        
+        self.logger.info(f"Checking {len(cost_centers_to_check)} cost centers for users no longer in teams...")
+        
+        for cost_center_id, expected_users in cost_centers_to_check.items():
             # Get current members of the cost center
             current_members = self.github_manager.get_cost_center_members(cost_center_id)
             

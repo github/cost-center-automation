@@ -12,6 +12,11 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 
+class BudgetsAPIUnavailableError(Exception):
+    """Raised when the GitHub Budgets API is not available for this enterprise."""
+    pass
+
+
 class GitHubCopilotManager:
     """Manages GitHub API operations for Copilot licenses."""
     
@@ -83,6 +88,9 @@ class GitHubCopilotManager:
             response.raise_for_status()
             return response.json()
             
+        except requests.exceptions.HTTPError as e:
+            self.logger.error(f"API request failed: {str(e)}")
+            raise  # Re-raise as HTTPError so specific handlers can catch it
         except requests.exceptions.RequestException as e:
             self.logger.error(f"API request failed: {str(e)}")
             raise
@@ -196,28 +204,30 @@ class GitHubCopilotManager:
         users_already_in_target = []
         users_in_other_cost_center = []
         
+        # Check if users are already in the target cost center for safety
+        # (this may be redundant if bulk check was done at batch level, but ensures correctness)
+        current_members_in_target = set(self.get_cost_center_members(cost_center_id))
+        self.logger.debug(f"get_cost_center_members returned {len(current_members_in_target)} members for {cost_center_id}")
+        users_in_target = [u for u in usernames if u in current_members_in_target]
+        users_not_in_target = [u for u in usernames if u not in current_members_in_target]
+        
+        # Only log bulk check if there are users already in target (avoid noise)
+        if users_in_target:
+            self.logger.info(f"🔍 Bulk membership check: {len(users_in_target)}/{len(usernames)} already in target cost center {cost_center_id}")
+        
+        # Mark users already in target as successful (no need to add)
+        for username in users_in_target:
+            users_already_in_target.append(username)
+            self.logger.debug(f"User {username} already in target cost center {cost_center_id}")
+        
         if ignore_current_cost_center:
-            # Fast path: add all users without checking current membership
-            users_to_add = usernames.copy()
-            self.logger.debug(f"ignore_current_cost_center=True: Adding all {len(users_to_add)} users without membership checks")
+            # Fast path: add all users NOT in target, don't check if they're in other cost centers
+            users_to_add = users_not_in_target.copy()
+            self.logger.debug(f"ignore_current_cost_center=True: Adding {len(users_to_add)} users without checking other cost centers")
         else:
-            # OPTIMIZED safe path: bulk comparison + targeted individual checks
-            self.logger.debug(f"ignore_current_cost_center=False: Optimized membership checking for {len(usernames)} users")
+            # Safe path: check if users NOT in target are in OTHER cost centers
+            self.logger.debug(f"ignore_current_cost_center=False: Checking {len(users_not_in_target)} users for membership in other cost centers")
             
-            # Step 1: Bulk check who's already in the target cost center
-            current_members_in_target = set(self.get_cost_center_members(cost_center_id))
-            users_in_target = [u for u in usernames if u in current_members_in_target]
-            users_not_in_target = [u for u in usernames if u not in current_members_in_target]
-            
-            self.logger.debug(f"Bulk optimization: {len(users_in_target)} already in target cost center, "
-                             f"{len(users_not_in_target)} need individual membership check")
-            
-            # Step 2: Users already in target cost center - mark as already assigned
-            for username in users_in_target:
-                users_already_in_target.append(username)
-                self.logger.debug(f"User {username} already in target cost center {cost_center_id}")
-            
-            # Step 3: Individual checks only for users NOT in target cost center
             for username in users_not_in_target:
                 existing_membership = self.check_user_cost_center_membership(username)
                 
@@ -338,17 +348,35 @@ class GitHubCopilotManager:
             if not usernames:
                 continue
                 
-            # Process users in batches of 50
-            batch_size = 50
-            batches = [usernames[i:i + batch_size] for i in range(0, len(usernames), batch_size)]
+            # OPTIMIZATION: Check bulk membership BEFORE batching to avoid unnecessary batches
+            # This is especially important when most/all users are already in the correct cost center
+            current_members_in_target = set(self.get_cost_center_members(cost_center_id))
+            users_already_in_target = [u for u in usernames if u in current_members_in_target]
+            users_not_in_target = [u for u in usernames if u not in current_members_in_target]
             
-            self.logger.info(f"Processing {len(usernames)} users for cost center {cost_center_id} in {len(batches)} batches")
+            self.logger.info(f"🔍 Bulk membership check: {len(users_already_in_target)}/{len(usernames)} already in target cost center {cost_center_id}")
             
-            cost_center_results = {}
-            for i, batch in enumerate(batches, 1):
-                self.logger.info(f"Processing batch {i}/{len(batches)} ({len(batch)} users) for cost center {cost_center_id}")
-                batch_results = self.add_users_to_cost_center(cost_center_id, batch, ignore_current_cost_center)
-                cost_center_results.update(batch_results)
+            # If all users are already in target, skip batching entirely
+            if not users_not_in_target:
+                self.logger.info(f"All {len(usernames)} users already assigned to cost center {cost_center_id}")
+                cost_center_results = {username: True for username in usernames}
+            else:
+                # Only create batches for users who actually need to be processed
+                usernames_to_process = users_not_in_target if ignore_current_cost_center else usernames
+                batch_size = 50
+                batches = [usernames_to_process[i:i + batch_size] for i in range(0, len(usernames_to_process), batch_size)]
+                
+                self.logger.info(f"Processing {len(usernames_to_process)} users for cost center {cost_center_id} in {len(batches)} batches")
+                
+                cost_center_results = {}
+                # Add users already in target as successful
+                for username in users_already_in_target:
+                    cost_center_results[username] = True
+                
+                for i, batch in enumerate(batches, 1):
+                    self.logger.info(f"Processing batch {i}/{len(batches)} ({len(batch)} users) for cost center {cost_center_id}")
+                    batch_results = self.add_users_to_cost_center(cost_center_id, batch, ignore_current_cost_center)
+                    cost_center_results.update(batch_results)
                 
                 batch_success_count = sum(1 for success in batch_results.values() if success)
                 batch_failure_count = len(batch_results) - batch_success_count
@@ -582,6 +610,38 @@ class GitHubCopilotManager:
         self.logger.info(f"Total members found in enterprise team {team_slug}: {len(all_members)}")
         return all_members
     
+    def get_all_active_cost_centers(self) -> Dict[str, str]:
+        """
+        Get all active cost centers from the enterprise for performance optimization.
+        
+        Returns:
+            Dict mapping cost center name -> cost center ID
+        """
+        if not self.use_enterprise or not self.enterprise_name:
+            self.logger.error("Cost center operations only available for GitHub Enterprise")
+            return {}
+            
+        url = f"{self.base_url}/enterprises/{self.enterprise_name}/settings/billing/cost-centers"
+        
+        try:
+            response_data = self._make_request(url)
+            cost_centers = response_data.get('costCenters', [])
+            
+            active_centers_map = {}
+            for cc in cost_centers:
+                if cc.get('state', '').lower() == 'active':
+                    name = cc.get('name', '')
+                    uuid = cc.get('id', '')
+                    if name and uuid:
+                        active_centers_map[name] = uuid
+            
+            self.logger.debug(f"Found {len(active_centers_map)} active cost centers out of {len(cost_centers)} total")
+            return active_centers_map
+            
+        except Exception as e:
+            self.logger.error(f"Error fetching active cost centers: {str(e)}")
+            return {}
+    
     def create_cost_center(self, name: str) -> Optional[str]:
         """
         Create a new cost center in the enterprise.
@@ -657,6 +717,98 @@ class GitHubCopilotManager:
             self.logger.error(f"Error creating cost center '{name}': {str(e)}")
             return None
     
+    def create_cost_center_with_preload_fallback(self, name: str, active_centers_map: Dict[str, str]) -> Optional[str]:
+        """
+        Create a cost center with preload optimization and fallback to collision handling.
+        
+        Args:
+            name: The name for the new cost center
+            active_centers_map: Preloaded map of active cost center names to IDs
+            
+        Returns:
+            The cost center ID if successful, None if failed
+        """
+        if not self.use_enterprise or not self.enterprise_name:
+            self.logger.error("Cost center creation only available for GitHub Enterprise")
+            return None
+        
+        # Check if it already exists in the preloaded map
+        if name in active_centers_map:
+            cost_center_id = active_centers_map[name]
+            self.logger.debug(f"Found existing cost center in preload map: '{name}' → {cost_center_id}")
+            return cost_center_id
+            
+        url = f"{self.base_url}/enterprises/{self.enterprise_name}/settings/billing/cost-centers"
+        
+        payload = {
+            "name": name
+        }
+        
+        # Set proper headers including API version
+        headers = {
+            "accept": "application/vnd.github+json",
+            "x-github-api-version": "2022-11-28",
+            "content-type": "application/json"
+        }
+        
+        try:
+            response = self.session.post(url, json=payload, headers=headers)
+            
+            # Handle rate limiting
+            if response.status_code == 429:
+                reset_time = int(response.headers.get('X-RateLimit-Reset', time.time() + 60))
+                wait_time = reset_time - int(time.time()) + 1
+                self.logger.warning(f"Rate limit hit. Waiting {wait_time} seconds...")
+                time.sleep(wait_time)
+                return self.create_cost_center_with_preload_fallback(name, active_centers_map)
+            
+            if response.status_code in [200, 201]:
+                response_data = response.json()
+                cost_center_id = response_data.get('id')
+                self.logger.info(f"Successfully created cost center '{name}' with ID: {cost_center_id}")
+                # Update the preload map for subsequent calls in the same batch
+                active_centers_map[name] = cost_center_id
+                return cost_center_id
+            elif response.status_code == 409:
+                # Race condition - someone else created it between preload and now
+                self.logger.info(f"Cost center '{name}' was created by another process (race condition)")
+                
+                try:
+                    response_data = response.json()
+                    error_message = response_data.get('message', '')
+                    
+                    # Try to extract UUID from message first
+                    uuid_pattern = r'existing cost center UUID:\s*([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'
+                    match = re.search(uuid_pattern, error_message, re.IGNORECASE)
+                    
+                    if match:
+                        cost_center_id = match.group(1)
+                        self.logger.info(f"Extracted cost center ID from race condition response: {cost_center_id}")
+                        # Update the preload map for subsequent calls
+                        active_centers_map[name] = cost_center_id
+                        return cost_center_id
+                    else:
+                        # Fallback to original collision handling
+                        self.logger.warning(f"Could not extract UUID from race condition response, falling back to name search")
+                        cost_center_id = self._find_cost_center_by_name(name)
+                        if cost_center_id:
+                            active_centers_map[name] = cost_center_id
+                        return cost_center_id
+                        
+                except (ValueError, KeyError) as e:
+                    self.logger.warning(f"Could not parse race condition response: {str(e)}, falling back to name search...")
+                    cost_center_id = self._find_cost_center_by_name(name)
+                    if cost_center_id:
+                        active_centers_map[name] = cost_center_id
+                    return cost_center_id
+            else:
+                self.logger.error(f"Failed to create cost center '{name}': {response.status_code} {response.text}")
+                return None
+                
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Error creating cost center '{name}': {str(e)}")
+            return None
+    
     def _find_cost_center_by_name(self, name: str) -> Optional[str]:
         """
         Find an ACTIVE cost center by name.
@@ -695,12 +847,15 @@ class GitHubCopilotManager:
             # Log what we found for debugging
             if deleted_centers:
                 inactive_list = [f"{cc_id} ({status})" for cc_id, status in deleted_centers]
-                self.logger.warning(f"Found {len(deleted_centers)} inactive cost centers with name '{name}': {', '.join(inactive_list)}")
+                self.logger.error(f"❌ DELETED COST CENTER: '{name}' exists but is DELETED")
+                self.logger.error(f"   Found {len(deleted_centers)} deleted cost center(s): {', '.join(inactive_list)}")
+                self.logger.error(f"   ⚠️  Cannot assign users to deleted cost centers!")
+                self.logger.error(f"   💡 Solution: Delete and recreate the cost center, or contact GitHub support to reactivate it")
             
             if not active_centers and not deleted_centers:
                 self.logger.error(f"No cost center found with name '{name}' (despite 409 conflict)")
             else:
-                self.logger.error(f"No ACTIVE cost center found with name '{name}' - only inactive ones exist")
+                self.logger.error(f"No ACTIVE cost center found with name '{name}' - only deleted ones exist")
             
             return None
             
@@ -887,6 +1042,51 @@ class GitHubCopilotManager:
             self.logger.debug(f"Failed to check cost center membership for {username}: {str(e)}")
             return None
     
+    def check_cost_center_has_budget(self, cost_center_id: str, cost_center_name: str) -> bool:
+        """
+        Check if a cost center already has a budget.
+        
+        Due to a known bug in the Budget API, when we create a budget with the cost center UUID
+        as budget_entity_name, the API stores the cost center NAME instead. So we need to 
+        check against the name, not the ID.
+        
+        Args:
+            cost_center_id: UUID of the cost center to check
+            cost_center_name: Name of the cost center to check
+            
+        Returns:
+            True if a budget already exists for this cost center, False otherwise
+            
+        Raises:
+            BudgetsAPIUnavailableError: If the Budgets API is not available for this enterprise
+        """
+        if not self.use_enterprise or not self.enterprise_name:
+            return False
+        
+        url = f"{self.base_url}/enterprises/{self.enterprise_name}/settings/billing/budgets"
+        
+        try:
+            response_data = self._make_request(url)
+            budgets = response_data.get('budgets', [])
+            
+            # Check if any budget has this cost center NAME as the entity name
+            # (API bug: stores name even when we send ID)
+            for budget in budgets:
+                if budget.get('budget_scope') == 'cost_center' and budget.get('budget_entity_name') == cost_center_name:
+                    self.logger.debug(f"Budget already exists for cost center '{cost_center_name}' (ID: {cost_center_id})")
+                    return True
+            
+            return False
+            
+        except requests.exceptions.HTTPError as e:
+            if hasattr(e, 'response') and e.response is not None and e.response.status_code == 404:
+                raise BudgetsAPIUnavailableError(f"Budgets API is not available for enterprise '{self.enterprise_name}'. This feature may not be enabled for your enterprise.")
+            self.logger.warning(f"Failed to check budget for cost center '{cost_center_name}' (ID: {cost_center_id}): {str(e)}")
+            return False
+        except requests.exceptions.RequestException as e:
+            self.logger.warning(f"Failed to check budget for cost center '{cost_center_name}' (ID: {cost_center_id}): {str(e)}")
+            return False
+    
     def create_cost_center_budget(self, cost_center_id: str, cost_center_name: str) -> bool:
         """
         Create a budget for a cost center using the GitHub Enterprise Budgets API.
@@ -900,10 +1100,22 @@ class GitHubCopilotManager:
             
         Returns:
             True if budget was created successfully, False otherwise
+            
+        Raises:
+            BudgetsAPIUnavailableError: If the Budgets API is not available for this enterprise
         """
         if not self.use_enterprise or not self.enterprise_name:
             self.logger.error("Budget creation only available for GitHub Enterprise")
             return False
+        
+        # Check if budget already exists (this may raise BudgetsAPIUnavailableError)
+        try:
+            if self.check_cost_center_has_budget(cost_center_id, cost_center_name):
+                self.logger.info(f"Budget already exists for cost center: {cost_center_name} (ID: {cost_center_id})")
+                return True
+        except BudgetsAPIUnavailableError:
+            # Re-raise the exception to be handled by the caller
+            raise
         
         url = f"{self.base_url}/enterprises/{self.enterprise_name}/settings/billing/budgets"
         
@@ -931,6 +1143,11 @@ class GitHubCopilotManager:
             self.logger.info(f"Successfully created budget for cost center: {cost_center_name} (ID: {cost_center_id})")
             return True
             
+        except requests.exceptions.HTTPError as e:
+            if hasattr(e, 'response') and e.response is not None and e.response.status_code == 404:
+                raise BudgetsAPIUnavailableError(f"Budgets API is not available for enterprise '{self.enterprise_name}'. This feature may not be enabled for your enterprise.")
+            self.logger.error(f"Failed to create budget for cost center '{cost_center_name}' (ID: {cost_center_id}): {str(e)}")
+            return False
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Failed to create budget for cost center '{cost_center_name}' (ID: {cost_center_id}): {str(e)}")
             return False
