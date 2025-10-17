@@ -20,6 +20,9 @@ on:
         default: false
         type: boolean
 
+permissions:
+  contents: read
+
 jobs:
   sync-cost-centers:
     runs-on: ubuntu-latest
