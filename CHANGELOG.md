@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **GitHub Enterprise Data Resident Support**: Full support for enterprises running on GitHub Enterprise Data Resident (GHE.com) with custom API endpoints
+- New configuration option `github.api_base_url` in config files for custom API endpoints
+- New environment variable `GITHUB_API_BASE_URL` for custom API endpoint configuration
+- Automatic API URL validation with support for:
+  - Standard GitHub.com (`https://api.github.com`)
+  - GitHub Enterprise Data Resident (`https://api.{subdomain}.ghe.com`)
+  - GitHub Enterprise Server (`https://{hostname}/api/v3`)
+- Comprehensive logging to show which API endpoint is being used at startup
+- Updated documentation in README.md, config.example.yaml, and .env.example
+
+### Changed
+- `GitHubCopilotManager` now uses configurable API base URL instead of hardcoded value
+- URL validation and normalization in `ConfigManager` to ensure proper API endpoint formatting
+
 ## [1.0.0] - 2024-09-25
 
 ### Added

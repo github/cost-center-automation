@@ -25,7 +25,10 @@ class GitHubCopilotManager:
         self.config = config
         self.logger = logging.getLogger(__name__)
         self.session = self._create_session()
-        self.base_url = "https://api.github.com"
+        
+        # Get API base URL from config (supports GHE Data Resident)
+        self.base_url = getattr(config, 'github_api_base_url', 'https://api.github.com')
+        self.logger.info(f"Initialized GitHub API client with base URL: {self.base_url}")
         
         # Enterprise-only API
         self.use_enterprise = True  

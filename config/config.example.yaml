@@ -2,6 +2,19 @@
 github:
   # GitHub Enterprise name (required)
   enterprise: "your_enterprise_name"
+  
+  # GitHub API base URL (optional)
+  # Default: "https://api.github.com" (standard GitHub.com)
+  # 
+  # For GitHub Enterprise Data Resident, use:
+  #   api_base_url: "https://api.{your-subdomain}.ghe.com"
+  #   Example: "https://api.octocorp.ghe.com"
+  #
+  # For GitHub Enterprise Server (self-hosted), use:
+  #   api_base_url: "https://{your-hostname}/api/v3"
+  #
+  # Leave commented or set to null to use standard GitHub.com API
+  # api_base_url: null
 
 # Logging Configuration
 logging:
