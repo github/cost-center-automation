@@ -10,6 +10,7 @@ from datetime import datetime
 import json
 import yaml
 from dotenv import load_dotenv
+from urllib.parse import urlparse
 
 
 class ConfigManager:
@@ -176,12 +177,23 @@ class ConfigManager:
             self.logger.info("Using standard GitHub API: https://api.github.com")
         elif '.ghe.com' in url:
             # GHE Data Resident pattern: https://api.{subdomain}.ghe.com
-            if not url.startswith('https://api.') or not url.endswith('.ghe.com'):
+            parsed = urlparse(url)
+            hostname = parsed.hostname or ''
+            
+            if not hostname.startswith('api.') or not hostname.endswith('.ghe.com'):
                 raise ValueError(
                     f"GitHub Enterprise Data Resident API URL should match pattern "
                     f"'https://api.{{subdomain}}.ghe.com', got: {url}"
                 )
-            subdomain = url.replace('https://api.', '').replace('.ghe.com', '')
+            
+            # Extract subdomain: remove 'api.' prefix and '.ghe.com' suffix
+            subdomain = hostname[4:-8]  # Strip 'api.' (4 chars) and '.ghe.com' (8 chars)
+            
+            if not subdomain:
+                raise ValueError(
+                    f"Invalid GitHub Enterprise Data Resident URL - missing subdomain: {url}"
+                )
+            
             self.logger.info(f"Using GitHub Enterprise Data Resident API for subdomain '{subdomain}': {url}")
         elif '/api/v3' in url:
             # GitHub Enterprise Server pattern
