@@ -70,7 +70,7 @@ class ConfigManager:
                 github_config.get("api_base_url")
             )
             # If not specified or is the default, use standard GitHub API
-            if self.github_api_base_url in placeholder_api_url_values or not self.github_api_base_url:
+            if self.github_api_base_url in placeholder_api_url_values:
                 self.github_api_base_url = "https://api.github.com"
             else:
                 # Validate and normalize the custom API URL
