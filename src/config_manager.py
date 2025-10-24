@@ -162,7 +162,8 @@ class ConfigManager:
         if not url or not isinstance(url, str):
             raise ValueError("GitHub API base URL must be a non-empty string")
         
-        # Remove trailing slashes for consistency
+        # Normalize URL: remove trailing slashes for consistent URL construction
+        # (All API calls use f"{base_url}/path", so trailing slash would create double slashes)
         url = url.rstrip('/')
         
         # Must use HTTPS
