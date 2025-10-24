@@ -165,6 +165,50 @@ teams:
 Set these instead of config file values:
 - `GITHUB_TOKEN` (required)
 - `GITHUB_ENTERPRISE` (required)
+- `GITHUB_API_BASE_URL` (optional, see below)
+
+## GitHub Enterprise Data Resident Support
+
+This tool supports enterprises running on **GitHub Enterprise Data Resident** (GHE.com), which uses dedicated API endpoints.
+
+### Standard GitHub.com (Default)
+
+No configuration needed. The tool uses `https://api.github.com` by default.
+
+### GitHub Enterprise Data Resident
+
+For Data Resident enterprises, set your custom API URL:
+
+**Option 1: Environment Variable**
+```bash
+export GITHUB_API_BASE_URL="https://api.octocorp.ghe.com"
+```
+
+**Option 2: Config File**
+```yaml
+github:
+  enterprise: "octocorp"
+  api_base_url: "https://api.octocorp.ghe.com"
+```
+
+Replace `octocorp` with your enterprise's subdomain.
+
+### GitHub Enterprise Server (Self-Hosted)
+
+For self-hosted GitHub Enterprise Server installations:
+
+```bash
+export GITHUB_API_BASE_URL="https://github.company.com/api/v3"
+```
+
+Or in config:
+```yaml
+github:
+  enterprise: "your-enterprise"
+  api_base_url: "https://github.company.com/api/v3"
+```
+
+**Note:** The tool will validate your API URL at startup and log which endpoint it's using.
 
 ## Teams Mode Details
 

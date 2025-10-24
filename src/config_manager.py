@@ -10,6 +10,7 @@ from datetime import datetime
 import json
 import yaml
 from dotenv import load_dotenv
+from urllib.parse import urlparse
 
 
 class ConfigManager:
@@ -62,6 +63,19 @@ class ConfigManager:
             # Validate that enterprise is configured clearly
             if not self.github_enterprise:
                 raise ValueError("GitHub enterprise must be configured (set env GITHUB_ENTERPRISE or update config.github.enterprise)")
+            
+            # GitHub API base URL configuration (for GHE Data Resident support)
+            placeholder_api_url_values = {"", None, "https://api.github.com"}
+            self.github_api_base_url = (
+                os.getenv("GITHUB_API_BASE_URL") or 
+                github_config.get("api_base_url")
+            )
+            # If not specified or is the default, use standard GitHub API
+            if self.github_api_base_url in placeholder_api_url_values:
+                self.github_api_base_url = "https://api.github.com"
+            else:
+                # Validate and normalize the custom API URL
+                self.github_api_base_url = self._validate_api_url(self.github_api_base_url)
             
             # Set up working directory paths
             self.export_dir = config_data.get("export_dir", "exports")
@@ -128,6 +142,71 @@ class ConfigManager:
             raise
 
         # Post-load sanity warnings for placeholder values will be checked later
+
+    def _validate_api_url(self, url: str) -> str:
+        """Validate and normalize GitHub API base URL.
+        
+        Supports:
+        - Standard GitHub: https://api.github.com
+        - GHE Data Resident: https://api.{subdomain}.ghe.com
+        - GitHub Enterprise Server: https://{hostname}/api/v3
+        
+        Args:
+            url: The API base URL to validate
+            
+        Returns:
+            Normalized URL without trailing slash
+            
+        Raises:
+            ValueError: If URL format is invalid
+        """
+        if not url or not isinstance(url, str):
+            raise ValueError("GitHub API base URL must be a non-empty string")
+        
+        # Normalize URL: remove trailing slashes for consistent URL construction
+        # (All API calls use f"{base_url}/path", so trailing slash would create double slashes)
+        url = url.rstrip('/')
+        
+        # Must use HTTPS
+        if not url.startswith('https://'):
+            raise ValueError(f"GitHub API base URL must use HTTPS: {url}")
+        
+        # Validate known patterns
+        if url == "https://api.github.com":
+            # Standard GitHub.com
+            self.logger.info("Using standard GitHub API: https://api.github.com")
+        elif '.ghe.com' in url:
+            # GHE Data Resident pattern: https://api.{subdomain}.ghe.com
+            parsed = urlparse(url)
+            hostname = parsed.hostname or ''
+            
+            if not hostname.startswith('api.') or not hostname.endswith('.ghe.com'):
+                raise ValueError(
+                    f"GitHub Enterprise Data Resident API URL should match pattern "
+                    f"'https://api.{{subdomain}}.ghe.com', got: {url}"
+                )
+            
+            # Extract subdomain: remove 'api.' prefix and '.ghe.com' suffix
+            subdomain = hostname[4:-8]  # Strip 'api.' (4 chars) and '.ghe.com' (8 chars)
+            
+            if not subdomain:
+                raise ValueError(
+                    f"Invalid GitHub Enterprise Data Resident URL - missing subdomain: {url}"
+                )
+            
+            self.logger.info(f"Using GitHub Enterprise Data Resident API for subdomain '{subdomain}': {url}")
+        elif '/api/v3' in url:
+            # GitHub Enterprise Server pattern
+            self.logger.info(f"Using GitHub Enterprise Server API: {url}")
+        else:
+            # Unknown pattern - log warning but allow it
+            self.logger.warning(
+                f"Using custom GitHub API URL (non-standard pattern): {url}. "
+                f"Expected patterns: 'https://api.github.com', 'https://api.{{subdomain}}.ghe.com', "
+                f"or 'https://{{hostname}}/api/v3'"
+            )
+        
+        return url
 
     def _warn_on_placeholders(self):
         """Emit warnings if placeholder values are still present in config."""
