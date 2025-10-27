@@ -88,7 +88,7 @@ Set up GitHub Actions for automatic syncing every 6 hours - see [Automation](#au
 
 ## Features
 
-### Two Operational Modes
+### Three Operational Modes
 
 **PRU-Based Mode** (Default)
 - Simple two-tier model: PRU overages allowed/not allowed
@@ -102,6 +102,13 @@ Set up GitHub Actions for automatic syncing every 6 hours - see [Automation](#au
 - Automatic cost center creation with bracket notation naming
 - Full sync mode (removes users who left teams)
 - Single assignment (existing cost center assignments are preserved by default)
+
+**Repository-Based Mode** (New!)
+- Assign repositories to cost centers based on custom properties
+- Flexible explicit mapping: map property values to cost centers
+- Works with any custom property (team, service, environment, etc.)
+- Automatic cost center creation for new mappings
+- Perfect for aligning repository ownership with cost tracking
 
 ### Additional Features
 - 🔄 **Plan/Apply execution**: Preview changes before applying
@@ -159,6 +166,73 @@ teams:
 **Cost Center Naming:**
 - Organization scope: `[org team] {org-name}/{team-name}`
 - Enterprise scope: `[enterprise team] {team-name}`
+
+### Repository-Based Mode Configuration
+
+Assign repositories to cost centers based on custom properties. This mode is ideal for tracking costs by project, service, or team ownership.
+
+**Prerequisites:**
+1. Configure custom properties in your organization settings
+2. Assign property values to your repositories
+3. Map property values to cost centers in config
+
+**Example Configuration:**
+
+```yaml
+github:
+  cost_centers:
+    mode: "repository"  # Enable repository mode
+    
+    repository_config:
+      explicit_mappings:
+        # Map repositories by team property
+        - cost_center: "Platform Engineering"
+          property_name: "team"
+          property_values:
+            - "platform"
+            - "infrastructure"
+            - "devops"
+        
+        # Map by environment
+        - cost_center: "Production Services"
+          property_name: "environment"
+          property_values:
+            - "production"
+        
+        # Map by service type
+        - cost_center: "Data & Analytics"
+          property_name: "team"
+          property_values:
+            - "data"
+            - "analytics"
+            - "ml"
+
+teams:
+  organizations:
+    - "your-org-name"  # Required for repository mode
+```
+
+**Usage:**
+
+```bash
+# Plan mode: See what would be assigned
+python main.py --assign-cost-centers --mode plan
+
+# Apply mode: Make the assignments
+python main.py --assign-cost-centers --mode apply --yes
+```
+
+**How It Works:**
+1. Fetches all repositories in your organization with their custom properties
+2. For each mapping, finds repositories with matching property values
+3. Creates cost centers if they don't exist (automatically)
+4. Assigns matching repositories to their designated cost centers
+
+**Common Use Cases:**
+- **By Team**: Map `team` property values to team-specific cost centers
+- **By Environment**: Separate production vs. development repository costs
+- **By Service**: Group microservices, frontend, backend, data services
+- **By Department**: Map organizational units to cost centers
 
 ### Environment Variables
 

@@ -467,7 +467,79 @@ def main():
         # Initialize GitHub manager
         github_manager = GitHubCopilotManager(config)
         
-        # Check if teams mode is enabled (via flag or config)
+        # Check operation mode: repository, teams, or PRU-based (default)
+        cost_center_mode = getattr(config, 'github_cost_centers_mode', 'users')
+        
+        # Repository mode: Assign repositories to cost centers based on custom properties
+        if cost_center_mode == "repository":
+            logger.info("=" * 80)
+            logger.info("REPOSITORY MODE ENABLED")
+            logger.info("=" * 80)
+            
+            if not hasattr(config, 'github_cost_centers_repository_config'):
+                logger.error("Repository mode requires 'repository_config' in config.github.cost_centers")
+                sys.exit(1)
+            
+            # Validate that an organization name is available
+            # For repository mode, we need an org context - use first teams org or enterprise
+            org_name = None
+            if hasattr(config, 'teams_organizations') and config.teams_organizations:
+                org_name = config.teams_organizations[0]
+                logger.info(f"Using organization: {org_name}")
+            elif config.github_enterprise:
+                # For enterprise, we'd need to list orgs - for now require explicit config
+                logger.error(
+                    "Repository mode requires an organization name. "
+                    "Please add 'organizations: [\"your-org-name\"]' to config.teams.organizations"
+                )
+                sys.exit(1)
+            
+            # Import and initialize repository manager
+            from src.repository_cost_center_manager import RepositoryCostCenterManager
+            repo_manager = RepositoryCostCenterManager(config, github_manager)
+            
+            # Handle show-config
+            if args.show_config:
+                print("\n===== Repository Mode Configuration =====")
+                print(f"Organization: {org_name}")
+                print(f"Explicit Mappings: {len(config.github_cost_centers_repository_config.explicit_mappings)}")
+                print("\nMappings:")
+                for idx, mapping in enumerate(config.github_cost_centers_repository_config.explicit_mappings, 1):
+                    print(f"\n  {idx}. Cost Center: {mapping.get('cost_center')}")
+                    print(f"     Property: {mapping.get('property_name')}")
+                    print(f"     Values: {mapping.get('property_values')}")
+                print("\n==========================================\n")
+                
+                if not any([args.list_users, args.assign_cost_centers]):
+                    return
+            
+            # Handle assignment
+            if args.assign_cost_centers:
+                if args.mode == "plan":
+                    logger.info("MODE=plan: Would assign repositories to cost centers (dry-run)")
+                    logger.info("Run with --mode apply to make actual changes")
+                    # TODO: Implement dry-run mode in repository manager
+                    return
+                elif args.mode == "apply":
+                    if not args.yes:
+                        response = input("\nThis will assign repositories to cost centers. Continue? (yes/no): ")
+                        if response.lower() != "yes":
+                            logger.info("Operation cancelled by user")
+                            return
+                    
+                    logger.info("MODE=apply: Assigning repositories to cost centers...")
+                    summary = repo_manager.run(org_name)
+                    
+                    logger.info("Repository assignment completed!")
+                    return
+                else:
+                    logger.error(f"Invalid mode: {args.mode}. Use 'plan' or 'apply'")
+                    sys.exit(1)
+            else:
+                logger.info("No action specified. Use --assign-cost-centers to assign repositories")
+                return
+        
+        # Teams mode: Check if teams mode is enabled (via flag or config)
         teams_mode_enabled = args.teams_mode or config.teams_enabled
         
         if teams_mode_enabled:

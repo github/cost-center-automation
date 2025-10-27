@@ -15,6 +15,71 @@ github:
   #
   # Leave commented or set to null to use standard GitHub.com API
   # api_base_url: null
+  
+  # Cost Center Assignment Mode
+  # Determines how repositories/users are assigned to cost centers
+  # Options: 'users', 'teams', or 'repository'
+  cost_centers:
+    mode: "users"  # Default: user-based assignment (PRU exceptions)
+    
+    # ========================================
+    # Repository Mode Configuration
+    # ========================================
+    # Use this mode to assign repositories to cost centers based on custom properties.
+    # Requires: Organization custom properties to be configured in your GitHub organization.
+    # 
+    # To enable repository mode:
+    # 1. Set mode: "repository" above
+    # 2. Configure explicit_mappings below
+    # 3. Ensure repositories have the custom properties you're mapping
+    # 
+    # Example custom property setup (in GitHub UI):
+    #   Property Name: "team"
+    #   Property Type: string or single_select
+    #   Values: "platform", "frontend", "backend", "data", etc.
+    #
+    repository_config:
+      # Explicit Mapping Mode (Recommended)
+      # Map specific custom property values to cost centers.
+      # This mode is most flexible when organizations use generic properties like "team", "service", or "environment"
+      # 
+      explicit_mappings:
+        # Example 1: Map repositories with team property to cost centers
+        - cost_center: "Platform Engineering"
+          property_name: "team"  # Name of the custom property to check
+          property_values:  # Repositories with any of these values will be assigned
+            - "platform"
+            - "infrastructure"
+            - "devops"
+        
+        # Example 2: Assign production services to a specific cost center
+        - cost_center: "Production Services"
+          property_name: "environment"
+          property_values:
+            - "production"
+        
+        # Example 3: Group by service type
+        - cost_center: "Frontend Applications"
+          property_name: "service"
+          property_values:
+            - "web"
+            - "mobile"
+            - "ui"
+        
+        # Example 4: Data team repositories
+        - cost_center: "Data & Analytics"
+          property_name: "team"
+          property_values:
+            - "data"
+            - "analytics"
+            - "ml"
+      
+      # NOTES:
+      # - If a cost center doesn't exist, it will be created automatically
+      # - Repositories can match multiple mappings (they'll be added to multiple cost centers)
+      # - Repositories without the specified property will be skipped
+      # - Property names are case-sensitive and must match exactly
+      # - Property values are also case-sensitive
 
 # Logging Configuration
 logging:

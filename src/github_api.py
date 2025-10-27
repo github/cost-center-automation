@@ -1154,3 +1154,203 @@ class GitHubCopilotManager:
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Failed to create budget for cost center '{cost_center_name}' (ID: {cost_center_id}): {str(e)}")
             return False
+    
+    # ===========================
+    # Custom Properties API Methods
+    # ===========================
+    
+    def get_org_custom_properties(self, org: str) -> List[Dict]:
+        """Get all custom property definitions for an organization.
+        
+        Args:
+            org: Organization name
+            
+        Returns:
+            List of custom property definitions with their schemas
+            
+        Example response:
+            [
+                {
+                    "property_name": "environment",
+                    "value_type": "single_select",
+                    "required": true,
+                    "default_value": "production",
+                    "allowed_values": ["production", "development"]
+                },
+                ...
+            ]
+        """
+        url = f"{self.base_url}/orgs/{org}/properties/schema"
+        self.logger.info(f"Fetching custom property schema for organization: {org}")
+        
+        try:
+            properties = self._make_request(url)
+            self.logger.info(f"Found {len(properties)} custom properties defined for organization: {org}")
+            return properties
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Failed to fetch custom properties for organization '{org}': {str(e)}")
+            return []
+    
+    def get_org_repositories_with_properties(self, org: str, page: int = 1, per_page: int = 100, 
+                                            query: Optional[str] = None) -> Dict:
+        """Get repositories with their custom property values for an organization.
+        
+        Args:
+            org: Organization name
+            page: Page number for pagination (default: 1)
+            per_page: Results per page, max 100 (default: 100)
+            query: Optional repository search query using GitHub search syntax
+                   Example: "custom_properties:environment:production"
+            
+        Returns:
+            Dict containing repository list with their custom properties
+            
+        Example response:
+            [
+                {
+                    "repository_id": 1296269,
+                    "repository_name": "Hello-World",
+                    "repository_full_name": "octocat/Hello-World",
+                    "properties": [
+                        {"property_name": "environment", "value": "production"},
+                        {"property_name": "team", "value": "platform"}
+                    ]
+                },
+                ...
+            ]
+        """
+        url = f"{self.base_url}/orgs/{org}/properties/values"
+        params = {"page": page, "per_page": per_page}
+        
+        if query:
+            params["repository_query"] = query
+            self.logger.info(f"Fetching repositories for organization '{org}' with query: {query} (page {page})")
+        else:
+            self.logger.info(f"Fetching repositories with custom properties for organization: {org} (page {page})")
+        
+        try:
+            repositories = self._make_request(url, params=params)
+            self.logger.debug(f"Fetched {len(repositories)} repositories from page {page}")
+            return repositories
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Failed to fetch repositories with properties for organization '{org}': {str(e)}")
+            return []
+    
+    def get_all_org_repositories_with_properties(self, org: str, query: Optional[str] = None) -> List[Dict]:
+        """Get all repositories with their custom property values (handles pagination automatically).
+        
+        Args:
+            org: Organization name
+            query: Optional repository search query using GitHub search syntax
+            
+        Returns:
+            List of all repositories with their custom properties
+        """
+        all_repositories = []
+        page = 1
+        per_page = 100
+        
+        while True:
+            repositories = self.get_org_repositories_with_properties(org, page, per_page, query)
+            
+            if not repositories:
+                break
+            
+            all_repositories.extend(repositories)
+            
+            # Check if we have more pages
+            if len(repositories) < per_page:
+                break
+            
+            page += 1
+        
+        self.logger.info(f"Total repositories with custom properties found: {len(all_repositories)}")
+        return all_repositories
+    
+    def get_repository_custom_properties(self, owner: str, repo: str) -> List[Dict]:
+        """Get custom properties for a specific repository.
+        
+        Args:
+            owner: Repository owner (organization or user)
+            repo: Repository name
+            
+        Returns:
+            List of custom property name-value pairs
+            
+        Example response:
+            [
+                {"property_name": "environment", "value": "production"},
+                {"property_name": "team", "value": "platform"}
+            ]
+        """
+        url = f"{self.base_url}/repos/{owner}/{repo}/properties/values"
+        self.logger.debug(f"Fetching custom properties for repository: {owner}/{repo}")
+        
+        try:
+            properties = self._make_request(url)
+            return properties
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Failed to fetch custom properties for repository '{owner}/{repo}': {str(e)}")
+            return []
+    
+    def add_repositories_to_cost_center(self, cost_center_id: str, repository_ids: List[int]) -> bool:
+        """Add multiple repositories to a specific cost center.
+        
+        Args:
+            cost_center_id: Target cost center ID (UUID)
+            repository_ids: List of repository IDs (integers) to add
+            
+        Returns:
+            True if successful, False otherwise
+            
+        Note:
+            The API may have a maximum number of repositories per request.
+            Currently supporting batch assignment similar to user assignment.
+        """
+        if not self.use_enterprise or not self.enterprise_name:
+            self.logger.warning("Cost center assignment updates only available for GitHub Enterprise")
+            return False
+        
+        if not repository_ids:
+            self.logger.warning("No repository IDs provided to add to cost center")
+            return False
+        
+        self.logger.info(f"Adding {len(repository_ids)} repositories to cost center {cost_center_id}")
+        
+        url = f"{self.base_url}/enterprises/{self.enterprise_name}/settings/billing/cost-centers/{cost_center_id}/resource"
+        
+        payload = {
+            "repositories": repository_ids
+        }
+        
+        # Set proper headers including API version
+        headers = {
+            "accept": "application/vnd.github+json",
+            "x-github-api-version": "2022-11-28",
+            "content-type": "application/json"
+        }
+        
+        try:
+            response = self.session.post(url, json=payload, headers=headers)
+            
+            # Handle rate limiting
+            if response.status_code == 429:
+                reset_time = int(response.headers.get('X-RateLimit-Reset', time.time() + 60))
+                wait_time = reset_time - int(time.time()) + 1
+                self.logger.warning(f"Rate limit hit. Waiting {wait_time} seconds...")
+                time.sleep(wait_time)
+                return self.add_repositories_to_cost_center(cost_center_id, repository_ids)
+            
+            if response.status_code in [200, 201, 204]:
+                self.logger.info(f"✅ Successfully added {len(repository_ids)} repositories to cost center {cost_center_id}")
+                return True
+            else:
+                self.logger.error(
+                    f"❌ Failed to add repositories to cost center {cost_center_id}: "
+                    f"{response.status_code} {response.text}"
+                )
+                return False
+                
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"❌ Error adding repositories to cost center {cost_center_id}: {str(e)}")
+            return False
