@@ -82,7 +82,7 @@ jobs:
           
       - name: Upload cache statistics as artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: cache-stats-${{ github.run_number }}
           path: |
@@ -129,7 +129,7 @@ jobs:
           echo '```' >> performance-report.md
           
       - name: Upload performance report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: performance-report-${{ github.run_number }}
           path: performance-report.md
