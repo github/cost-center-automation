@@ -3,7 +3,7 @@
 **tl;dr:**
 - Automate cost center creation and syncing with enterprise teams, org-based teams, or for every Copilot user in your enterprise
 - Configure Actions workflow to keep cost centers in sync
-- Coming soon: automatically create budgets for each cost center
+- Automatically create budgets for cost centers (Copilot PRU, Actions, and future products)
 
 Automate GitHub Copilot license cost center assignments for your enterprise with two powerful modes:
 
@@ -220,7 +220,56 @@ python main.py --assign-cost-centers --mode plan
 
 # Apply mode: Make the assignments
 python main.py --assign-cost-centers --mode apply --yes
+
+# With budget creation
+python main.py --assign-cost-centers --mode apply --create-budgets --yes
 ```
+
+### Budget Configuration (Optional)
+
+Automatically create budgets for cost centers when they're created. Supports multiple GitHub products with configurable amounts.
+
+```yaml
+budgets:
+  enabled: true  # Global toggle for budget creation
+  
+  products:
+    copilot:
+      amount: 100      # Budget amount in USD
+      enabled: true    # Create Copilot PRU budgets
+    
+    actions:
+      amount: 125      # Budget amount in USD  
+      enabled: true    # Create Actions budgets
+    
+    # Future products
+    # packages:
+    #   amount: 50
+    #   enabled: false
+```
+
+**Usage with Budgets:**
+
+```bash
+# Any mode with budget creation
+python main.py --create-budgets [other-options]
+
+# Teams mode with budgets
+python main.py --teams-mode --create-budgets --mode apply --yes
+
+# Repository mode with budgets  
+python main.py --assign-cost-centers --mode apply --create-budgets --yes
+```
+
+**Supported Products:**
+- **Copilot**: GitHub Copilot PRU (Premium Request Units) budgets
+- **Actions**: GitHub Actions compute minutes budgets
+- **Future**: Packages, Codespaces, and other products (configurable)
+
+**Budget Types:**
+- Actions uses `ProductPricing` budget type
+- Copilot uses `SkuPricing` budget type  
+- Automatically handles different API formats per product
 
 **How It Works:**
 1. Fetches all repositories in your organization with their custom properties

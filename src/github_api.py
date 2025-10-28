@@ -1090,7 +1090,7 @@ class GitHubCopilotManager:
             self.logger.warning(f"Failed to check budget for cost center '{cost_center_name}' (ID: {cost_center_id}): {str(e)}")
             return False
     
-    def create_cost_center_budget(self, cost_center_id: str, cost_center_name: str) -> bool:
+    def create_cost_center_budget(self, cost_center_id: str, cost_center_name: str, budget_amount: int = 100) -> bool:
         """
         Create a budget for a cost center using the GitHub Enterprise Budgets API.
         
@@ -1100,6 +1100,7 @@ class GitHubCopilotManager:
         Args:
             cost_center_id: UUID of the cost center to create a budget for
             cost_center_name: Name of the cost center (used for logging only)
+            budget_amount: Budget amount in dollars (default: 100)
             
         Returns:
             True if budget was created successfully, False otherwise
@@ -1126,7 +1127,7 @@ class GitHubCopilotManager:
             "budget_type": "SkuPricing",
             "budget_product_sku": "copilot_premium_request",
             "budget_scope": "cost_center",
-            "budget_amount": 0,
+            "budget_amount": budget_amount,
             "prevent_further_usage": True,
             "budget_entity_name": cost_center_id,  # Use UUID instead of name
             "budget_alerting": {
@@ -1154,6 +1155,118 @@ class GitHubCopilotManager:
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Failed to create budget for cost center '{cost_center_name}' (ID: {cost_center_id}): {str(e)}")
             return False
+
+    def check_cost_center_has_product_budget(self, cost_center_id: str, cost_center_name: str, product: str) -> bool:
+        """
+        Check if a cost center already has a budget for a specific product.
+        
+        Args:
+            cost_center_id: UUID of the cost center to check
+            cost_center_name: Name of the cost center to check
+            product: Product name (e.g., 'actions', 'copilot')
+            
+        Returns:
+            True if a budget already exists for this cost center and product, False otherwise
+        """
+        if not self.use_enterprise or not self.enterprise_name:
+            self.logger.warning("Budget checking only available for GitHub Enterprise")
+            return False
+        
+        url = f"{self.base_url}/enterprises/{self.enterprise_name}/settings/billing/budgets"
+        
+        try:
+            budgets = self._make_request(url)
+            
+            # Get the product SKU for comparison
+            product_sku = self._get_product_sku(product)
+            
+            for budget in budgets:
+                if (budget.get('budget_scope') == 'cost_center' and 
+                    budget.get('budget_entity_name') == cost_center_id and
+                    budget.get('budget_product_sku') == product_sku):
+                    self.logger.info(f"Found existing {product} budget for cost center: {cost_center_name}")
+                    return True
+            
+            return False
+            
+        except requests.exceptions.RequestException as e:
+            self.logger.warning(f"Failed to check {product} budget for cost center '{cost_center_name}' (ID: {cost_center_id}): {str(e)}")
+            return False
+
+    def create_product_budget(self, cost_center_id: str, cost_center_name: str, product: str, amount: int) -> bool:
+        """
+        Create a product-level budget for a cost center.
+        
+        Args:
+            cost_center_id: UUID of the cost center
+            cost_center_name: Name of the cost center (for logging)
+            product: Product name (e.g., 'actions', 'copilot')
+            amount: Budget amount in dollars
+            
+        Returns:
+            True if budget was created successfully, False otherwise
+        """
+        if not self.use_enterprise or not self.enterprise_name:
+            self.logger.error("Budget creation only available for GitHub Enterprise")
+            return False
+        
+        # Check if budget already exists
+        if self.check_cost_center_has_product_budget(cost_center_id, cost_center_name, product):
+            self.logger.info(f"{product.title()} budget already exists for cost center: {cost_center_name}")
+            return True
+        
+        url = f"{self.base_url}/enterprises/{self.enterprise_name}/settings/billing/budgets"
+        
+        # Actions uses ProductPricing, Copilot uses SkuPricing
+        budget_type = "ProductPricing" if product.lower() == "actions" else "SkuPricing"
+        product_sku = self._get_product_sku(product)
+        
+        payload = {
+            "budget_type": budget_type,
+            "budget_product_sku": product_sku,
+            "budget_scope": "cost_center",
+            "budget_amount": amount,
+            "prevent_further_usage": True,
+            "budget_entity_name": cost_center_id,  # Use UUID
+            "budget_alerting": {
+                "will_alert": False,
+                "alert_recipients": []
+            }
+        }
+        
+        headers = {
+            "accept": "application/vnd.github+json",
+            "x-github-api-version": "2022-11-28",
+            "content-type": "application/json"
+        }
+        
+        try:
+            response = self._make_request(url, method='POST', json=payload, custom_headers=headers)
+            self.logger.info(f"✅ Successfully created ${amount} {product} budget for cost center: {cost_center_name}")
+            return True
+            
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"❌ Failed to create {product} budget for cost center '{cost_center_name}': {str(e)}")
+            return False
+
+    def _get_product_sku(self, product: str) -> str:
+        """
+        Get the appropriate product SKU for a given product name.
+        
+        Args:
+            product: Product name (e.g., 'actions', 'copilot')
+            
+        Returns:
+            Product SKU string
+        """
+        product_mapping = {
+            'actions': 'actions',
+            'copilot': 'copilot_premium_request',
+            'packages': 'packages',
+            'codespaces': 'codespaces'
+        }
+        
+        return product_mapping.get(product.lower(), product.lower())
     
     # ===========================
     # Custom Properties API Methods

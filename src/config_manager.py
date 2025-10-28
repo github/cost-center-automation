@@ -173,6 +173,14 @@ class ConfigManager:
                 teams_config.get("remove_orphaned_users", True)  # Fallback to old key
             )
             
+            # Budget configuration
+            budget_config = config_data.get("budgets", {})
+            self.budgets_enabled = budget_config.get("enabled", False)
+            self.budget_products = budget_config.get("products", {
+                "copilot": {"amount": 100, "enabled": True},
+                "actions": {"amount": 125, "enabled": True}
+            })
+            
             # Store full config for other methods
             self.config = config_data
             

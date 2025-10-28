@@ -9,15 +9,17 @@ from typing import Dict, List, Optional, Set
 class RepositoryCostCenterManager:
     """Manages cost center assignments based on repository custom properties."""
     
-    def __init__(self, config, github_api):
+    def __init__(self, config, github_api, create_budgets: bool = False):
         """Initialize the repository cost center manager.
         
         Args:
             config: Configuration object
             github_api: GitHubCopilotManager instance for API calls
+            create_budgets: Whether to create budgets for cost centers
         """
         self.config = config
         self.github_api = github_api
+        self.create_budgets = create_budgets
         self.logger = logging.getLogger(__name__)
         
         # Validate configuration
@@ -149,6 +151,10 @@ class RepositoryCostCenterManager:
                         f"Successfully created cost center: {cost_center_name} "
                         f"(ID: {cost_center['id']})"
                     )
+                    
+                    # Create budgets if enabled
+                    if self.create_budgets and hasattr(self.config, 'budgets_enabled') and self.config.budgets_enabled:
+                        self._create_budgets_for_cost_center(cost_center['id'], cost_center_name)
                 except Exception as e:
                     self.logger.error(f"Failed to create cost center '{cost_center_name}': {str(e)}")
                     summary['assignments'].append({
@@ -251,7 +257,7 @@ class RepositoryCostCenterManager:
     ) -> int:
         """Assign multiple repositories to a cost center.
         
-        The GitHub API requires repository IDs (not names) for assignment.
+        The GitHub API requires repository names in "org/repo" format for assignment.
         
         Args:
             cost_center_id: UUID of the cost center
@@ -264,26 +270,24 @@ class RepositoryCostCenterManager:
         if not repositories:
             return 0
         
-        # Extract repository IDs
-        repo_ids = []
+        # Extract repository names
         repo_names = []
         
         for repo in repositories:
-            repo_id = repo.get('repository_id')
-            repo_name = repo.get('repository_full_name', repo.get('repository_name', 'unknown'))
+            repo_full_name = repo.get('repository_full_name')
             
-            if repo_id:
-                repo_ids.append(repo_id)
-                repo_names.append(repo_name)
+            if repo_full_name:
+                repo_names.append(repo_full_name)
             else:
-                self.logger.warning(f"Repository '{repo_name}' is missing repository_id, skipping")
+                repo_name = repo.get('repository_name', 'unknown')
+                self.logger.warning(f"Repository '{repo_name}' is missing repository_full_name, skipping")
         
-        if not repo_ids:
-            self.logger.error("No valid repository IDs found to assign")
+        if not repo_names:
+            self.logger.error("No valid repository names found to assign")
             return 0
         
         self.logger.info(
-            f"Assigning {len(repo_ids)} repositories to cost center '{cost_center_name}' "
+            f"Assigning {len(repo_names)} repositories to cost center '{cost_center_name}' "
             f"(ID: {cost_center_id})"
         )
         
@@ -295,14 +299,14 @@ class RepositoryCostCenterManager:
         
         # Call the API to assign repositories
         try:
-            success = self.github_api.add_repositories_to_cost_center(cost_center_id, repo_ids)
+            success = self.github_api.add_repositories_to_cost_center(cost_center_id, repo_names)
             
             if success:
                 self.logger.info(
-                    f"Successfully assigned {len(repo_ids)} repositories to "
+                    f"Successfully assigned {len(repo_names)} repositories to "
                     f"cost center '{cost_center_name}'"
                 )
-                return len(repo_ids)
+                return len(repo_names)
             else:
                 self.logger.error(
                     f"Failed to assign repositories to cost center '{cost_center_name}'"
@@ -314,3 +318,43 @@ class RepositoryCostCenterManager:
                 f"Error assigning repositories to cost center '{cost_center_name}': {str(e)}"
             )
             return 0
+
+    def _create_budgets_for_cost_center(self, cost_center_id: str, cost_center_name: str):
+        """Create budgets for a cost center based on configuration.
+        
+        Args:
+            cost_center_id: UUID of the cost center
+            cost_center_name: Name of the cost center
+        """
+        if not hasattr(self.config, 'budget_products'):
+            self.logger.warning("No budget products configured")
+            return
+        
+        self.logger.info(f"Creating budgets for cost center: {cost_center_name}")
+        
+        for product_name, product_config in self.config.budget_products.items():
+            if not product_config.get('enabled', False):
+                self.logger.debug(f"Skipping {product_name} budget (disabled)")
+                continue
+            
+            amount = product_config.get('amount', 100)
+            
+            try:
+                if product_name == 'copilot':
+                    # Use the original method for Copilot
+                    success = self.github_api.create_cost_center_budget(
+                        cost_center_id, cost_center_name, budget_amount=amount
+                    )
+                else:
+                    # Use the new product budget method for other products
+                    success = self.github_api.create_product_budget(
+                        cost_center_id, cost_center_name, product_name, amount
+                    )
+                
+                if success:
+                    self.logger.info(f"✅ Created ${amount} {product_name} budget for {cost_center_name}")
+                else:
+                    self.logger.warning(f"❌ Failed to create {product_name} budget for {cost_center_name}")
+                    
+            except Exception as e:
+                self.logger.error(f"Error creating {product_name} budget for {cost_center_name}: {str(e)}")

@@ -136,3 +136,32 @@ teams:
     # "my-org/frontend-team": "CC-FRONTEND-001"
     # "my-org/backend-team": "CC-BACKEND-001"
     # "other-org/devops-team": "Team: DevOps"  # Will be auto-created if auto_create is true
+
+# ========================================
+# Budget Configuration (Optional)
+# ========================================
+# Configure automatic budget creation for cost centers.
+# Requires GitHub Enterprise with Budgets API access.
+# Use with --create-budgets flag.
+budgets:
+  enabled: false  # Set to true to enable automatic budget creation
+  
+  # Product-specific budget configuration
+  # Supported products: copilot, actions, packages, codespaces
+  products:
+    copilot:
+      amount: 100      # Budget amount in USD
+      enabled: true    # Create Copilot PRU budgets
+    
+    actions:
+      amount: 125      # Budget amount in USD  
+      enabled: true    # Create Actions budgets
+    
+    # Future products can be added here
+    # packages:
+    #   amount: 50
+    #   enabled: false
+    # 
+    # codespaces:
+    #   amount: 200
+    #   enabled: false

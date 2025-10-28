@@ -496,7 +496,7 @@ def main():
             
             # Import and initialize repository manager
             from src.repository_cost_center_manager import RepositoryCostCenterManager
-            repo_manager = RepositoryCostCenterManager(config, github_manager)
+            repo_manager = RepositoryCostCenterManager(config, github_manager, create_budgets=args.create_budgets)
             
             # Handle show-config
             if args.show_config:
