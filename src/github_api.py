@@ -1128,9 +1128,7 @@ class GitHubCopilotManager:
             "budget_entity_name": cost_center_id,  # Use UUID instead of name
             "budget_alerting": {
                 "will_alert": True,
-                "alert_recipients": [
-                    " "
-                ]
+                "alert_recipients": []
             }
         }
         
