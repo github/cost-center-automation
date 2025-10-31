@@ -12,6 +12,8 @@ import yaml
 from dotenv import load_dotenv
 from urllib.parse import urlparse
 
+from src.config_models import RepositoryConfig
+
 
 class ConfigManager:
     """Manages application configuration from files and environment variables."""
@@ -127,30 +129,6 @@ class ConfigManager:
             # Repository mode configuration
             if self.github_cost_centers_mode == "repository":
                 repo_config_data = github_cost_centers_config.get("repository_config", {})
-                
-                # Convert to simple object for easy access
-                class RepositoryConfig:
-                    def __init__(self, data):
-                        # Explicit mappings list
-                        self.explicit_mappings = data.get("explicit_mappings", [])
-                        
-                        # Validate explicit mappings structure
-                        for idx, mapping in enumerate(self.explicit_mappings):
-                            if not isinstance(mapping, dict):
-                                raise ValueError(f"Explicit mapping {idx} must be a dictionary")
-                            
-                            if not mapping.get("cost_center"):
-                                raise ValueError(f"Explicit mapping {idx} missing 'cost_center' field")
-                            
-                            if not mapping.get("property_name"):
-                                raise ValueError(f"Explicit mapping {idx} missing 'property_name' field")
-                            
-                            if not mapping.get("property_values"):
-                                raise ValueError(f"Explicit mapping {idx} missing 'property_values' field")
-                            
-                            if not isinstance(mapping.get("property_values"), list):
-                                raise ValueError(f"Explicit mapping {idx} 'property_values' must be a list")
-                
                 self.github_cost_centers_repository_config = RepositoryConfig(repo_config_data)
                 
                 self.logger.info(

@@ -519,7 +519,6 @@ class GitHubCopilotManager:
             self.logger.error("Enterprise name required for listing enterprise teams")
             return []
         
-        self.logger.info(f"Fetching enterprise teams for: {self.enterprise_name}")
         url = f"{self.base_url}/enterprises/{self.enterprise_name}/teams"
         
         all_teams = []
@@ -542,7 +541,6 @@ class GitHubCopilotManager:
                     break
                 
                 all_teams.extend(teams)
-                self.logger.info(f"Fetched page {page} with {len(teams)} enterprise teams")
                 
                 page += 1
                 
@@ -554,7 +552,6 @@ class GitHubCopilotManager:
                 self.logger.error(f"Failed to fetch enterprise teams: {str(e)}")
                 break
         
-        self.logger.info(f"Total enterprise teams found: {len(all_teams)}")
         return all_teams
     
     def get_enterprise_team_members(self, team_slug: str) -> List[Dict]:
@@ -610,7 +607,6 @@ class GitHubCopilotManager:
                 self.logger.warning(f"Failed to fetch members for enterprise team {team_slug}: {str(e)}")
                 break
         
-        self.logger.info(f"Total members found in enterprise team {team_slug}: {len(all_members)}")
         return all_members
     
     def get_all_active_cost_centers(self) -> Dict[str, str]:
@@ -1131,8 +1127,10 @@ class GitHubCopilotManager:
             "prevent_further_usage": True,
             "budget_entity_name": cost_center_id,  # Use UUID instead of name
             "budget_alerting": {
-                "will_alert": False,
-                "alert_recipients": []
+                "will_alert": True,
+                "alert_recipients": [
+                    "gmondello"
+                ]
             }
         }
         
@@ -1180,12 +1178,10 @@ class GitHubCopilotManager:
             # Get the product SKU for comparison
             product_sku = self._get_product_sku(product)
             
-            for budget in budgets:
-                if (budget.get('budget_scope') == 'cost_center' and 
-                    budget.get('budget_entity_name') == cost_center_id and
-                    budget.get('budget_product_sku') == product_sku):
-                    self.logger.info(f"Found existing {product} budget for cost center: {cost_center_name}")
-                    return True
+            # Check if budget exists for this cost center and product
+            if self._budget_exists_for_cost_center(budgets, cost_center_id, product_sku):
+                self.logger.info(f"Found existing {product} budget for cost center: {cost_center_name}")
+                return True
             
             return False
             
@@ -1229,8 +1225,10 @@ class GitHubCopilotManager:
             "prevent_further_usage": True,
             "budget_entity_name": cost_center_id,  # Use UUID
             "budget_alerting": {
-                "will_alert": False,
-                "alert_recipients": []
+                "will_alert": True,
+                "alert_recipients": [
+                    "gmondello"
+                ]
             }
         }
         
@@ -1267,6 +1265,25 @@ class GitHubCopilotManager:
         }
         
         return product_mapping.get(product.lower(), product.lower())
+    
+    def _budget_exists_for_cost_center(self, budgets: List[Dict], cost_center_id: str, product_sku: str) -> bool:
+        """
+        Check if a budget exists for a specific cost center and product SKU.
+        
+        Args:
+            budgets: List of budget dictionaries to search through
+            cost_center_id: UUID of the cost center to check
+            product_sku: Product SKU to match
+            
+        Returns:
+            True if a matching budget exists, False otherwise
+        """
+        for budget in budgets:
+            if (budget.get('budget_scope') == 'cost_center' and 
+                budget.get('budget_entity_name') == cost_center_id and
+                budget.get('budget_product_sku') == product_sku):
+                return True
+        return False
     
     # ===========================
     # Custom Properties API Methods
@@ -1406,12 +1423,12 @@ class GitHubCopilotManager:
             self.logger.error(f"Failed to fetch custom properties for repository '{owner}/{repo}': {str(e)}")
             return []
     
-    def add_repositories_to_cost_center(self, cost_center_id: str, repository_ids: List[int]) -> bool:
+    def add_repositories_to_cost_center(self, cost_center_id: str, repository_names: List[str]) -> bool:
         """Add multiple repositories to a specific cost center.
         
         Args:
             cost_center_id: Target cost center ID (UUID)
-            repository_ids: List of repository IDs (integers) to add
+            repository_names: List of repository full names (strings in 'org/repo' format) to add
             
         Returns:
             True if successful, False otherwise
@@ -1424,16 +1441,16 @@ class GitHubCopilotManager:
             self.logger.warning("Cost center assignment updates only available for GitHub Enterprise")
             return False
         
-        if not repository_ids:
-            self.logger.warning("No repository IDs provided to add to cost center")
+        if not repository_names:
+            self.logger.warning("No repository names provided to add to cost center")
             return False
         
-        self.logger.info(f"Adding {len(repository_ids)} repositories to cost center {cost_center_id}")
+        self.logger.info(f"Adding {len(repository_names)} repositories to cost center {cost_center_id}")
         
         url = f"{self.base_url}/enterprises/{self.enterprise_name}/settings/billing/cost-centers/{cost_center_id}/resource"
         
         payload = {
-            "repositories": repository_ids
+            "repositories": repository_names
         }
         
         # Set proper headers including API version

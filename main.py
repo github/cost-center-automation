@@ -27,6 +27,7 @@ from typing import Dict, List, Optional
 from src.github_api import GitHubCopilotManager
 from src.cost_center_manager import CostCenterManager
 from src.teams_cost_center_manager import TeamsCostCenterManager
+from src.repository_cost_center_manager import RepositoryCostCenterManager
 from src.config_manager import ConfigManager
 from src.logger_setup import setup_logging
 
@@ -494,21 +495,22 @@ def main():
                 )
                 sys.exit(1)
             
-            # Import and initialize repository manager
-            from src.repository_cost_center_manager import RepositoryCostCenterManager
+            # Initialize repository manager
             repo_manager = RepositoryCostCenterManager(config, github_manager, create_budgets=args.create_budgets)
             
             # Handle show-config
             if args.show_config:
-                print("\n===== Repository Mode Configuration =====")
-                print(f"Organization: {org_name}")
-                print(f"Explicit Mappings: {len(config.github_cost_centers_repository_config.explicit_mappings)}")
-                print("\nMappings:")
+                logger.info("=" * 60)
+                logger.info("Repository Mode Configuration")
+                logger.info("=" * 60)
+                logger.info(f"Organization: {org_name}")
+                logger.info(f"Explicit Mappings: {len(config.github_cost_centers_repository_config.explicit_mappings)}")
+                logger.info("\nMappings:")
                 for idx, mapping in enumerate(config.github_cost_centers_repository_config.explicit_mappings, 1):
-                    print(f"\n  {idx}. Cost Center: {mapping.get('cost_center')}")
-                    print(f"     Property: {mapping.get('property_name')}")
-                    print(f"     Values: {mapping.get('property_values')}")
-                print("\n==========================================\n")
+                    logger.info(f"\n  {idx}. Cost Center: {mapping.get('cost_center')}")
+                    logger.info(f"     Property: {mapping.get('property_name')}")
+                    logger.info(f"     Values: {mapping.get('property_values')}")
+                logger.info("=" * 60)
                 
                 if not any([args.list_users, args.assign_cost_centers]):
                     return
