@@ -1129,7 +1129,7 @@ class GitHubCopilotManager:
             "budget_alerting": {
                 "will_alert": True,
                 "alert_recipients": [
-                    "gmondello"
+                    " "
                 ]
             }
         }
@@ -1227,7 +1227,7 @@ class GitHubCopilotManager:
             "budget_alerting": {
                 "will_alert": True,
                 "alert_recipients": [
-                    "gmondello"
+                    " "
                 ]
             }
         }
