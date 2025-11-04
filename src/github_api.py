@@ -1127,10 +1127,8 @@ class GitHubCopilotManager:
             "prevent_further_usage": True,
             "budget_entity_name": cost_center_id,  # Use UUID instead of name
             "budget_alerting": {
-                "will_alert": True,
-                "alert_recipients": [
-                    "gmondello"
-                ]
+                "will_alert": False,
+                "alert_recipients": []
             }
         }
         
@@ -1176,7 +1174,7 @@ class GitHubCopilotManager:
             budgets = self._make_request(url)
             
             # Get the product SKU for comparison
-            product_sku = self._get_product_sku(product)
+            _, product_sku = self._get_budget_type_and_sku(product)
             
             # Check if budget exists for this cost center and product
             if self._budget_exists_for_cost_center(budgets, cost_center_id, product_sku):
@@ -1213,9 +1211,8 @@ class GitHubCopilotManager:
         
         url = f"{self.base_url}/enterprises/{self.enterprise_name}/settings/billing/budgets"
         
-        # Actions uses ProductPricing, Copilot uses SkuPricing
-        budget_type = "ProductPricing" if product.lower() == "actions" else "SkuPricing"
-        product_sku = self._get_product_sku(product)
+        # Determine budget type and product SKU based on the product
+        budget_type, product_sku = self._get_budget_type_and_sku(product)
         
         payload = {
             "budget_type": budget_type,
@@ -1225,10 +1222,8 @@ class GitHubCopilotManager:
             "prevent_further_usage": True,
             "budget_entity_name": cost_center_id,  # Use UUID
             "budget_alerting": {
-                "will_alert": True,
-                "alert_recipients": [
-                    "gmondello"
-                ]
+                "will_alert": False,
+                "alert_recipients": []
             }
         }
         
@@ -1247,24 +1242,89 @@ class GitHubCopilotManager:
             self.logger.error(f"❌ Failed to create {product} budget for cost center '{cost_center_name}': {str(e)}")
             return False
 
-    def _get_product_sku(self, product: str) -> str:
+    def _get_budget_type_and_sku(self, product: str) -> tuple[str, str]:
         """
-        Get the appropriate product SKU for a given product name.
+        Get the appropriate budget type and product SKU for a given product name.
+        
+        GitHub supports two types of budgets:
+        1. ProductPricing: Budgets that track spending across an entire product
+        2. SkuPricing: Budgets that track spending for a specific SKU within a product
         
         Args:
-            product: Product name (e.g., 'actions', 'copilot')
+            product: Product name or SKU (e.g., 'actions', 'copilot', 'copilot_premium_request')
             
         Returns:
-            Product SKU string
+            Tuple of (budget_type, product_sku)
+            
+        Reference:
+            https://docs.github.com/en/enterprise-cloud@latest/billing/reference/product-and-sku-names
         """
-        product_mapping = {
+        product_lower = product.lower()
+        
+        # Product-level identifiers (ProductPricing budgets)
+        # These track spending across the entire product
+        product_level = {
             'actions': 'actions',
-            'copilot': 'copilot_premium_request',
-            'packages': 'packages',
-            'codespaces': 'codespaces'
+            'packages': 'packages', 
+            'codespaces': 'codespaces',
+            'copilot': 'copilot',
+            'ghas': 'ghas',
+            'ghec': 'ghec'
         }
         
-        return product_mapping.get(product.lower(), product.lower())
+        # SKU-level identifiers (SkuPricing budgets)
+        # These track spending for specific SKUs within a product
+        # Common SKUs users might want to budget for
+        sku_level = {
+            # GitHub Copilot SKUs
+            'copilot_premium_request': 'copilot_premium_request',
+            'copilot_agent_premium_request': 'copilot_agent_premium_request',
+            'copilot_enterprise': 'copilot_enterprise',
+            'copilot_for_business': 'copilot_for_business',
+            'copilot_standalone': 'copilot_standalone',
+            
+            # GitHub Actions SKUs (common examples)
+            'actions_linux': 'actions_linux',
+            'actions_macos': 'actions_macos',
+            'actions_windows': 'actions_windows',
+            'actions_storage': 'actions_storage',
+            
+            # GitHub Codespaces SKUs
+            'codespaces_storage': 'codespaces_storage',
+            'codespaces_prebuild_storage': 'codespaces_prebuild_storage',
+            
+            # GitHub Packages SKUs
+            'packages_storage': 'packages_storage',
+            'packages_bandwidth': 'packages_bandwidth',
+            
+            # GitHub Advanced Security SKUs
+            'ghas_licenses': 'ghas_licenses',
+            'ghas_code_security_licenses': 'ghas_code_security_licenses',
+            'ghas_secret_protection_licenses': 'ghas_secret_protection_licenses',
+            
+            # Other SKUs
+            'ghec_licenses': 'ghec_licenses',
+            'git_lfs_storage': 'git_lfs_storage',
+            'git_lfs_bandwidth': 'git_lfs_bandwidth',
+            'models_inference': 'models_inference',
+            'spark_premium_request': 'spark_premium_request'
+        }
+        
+        # Check if it's a known SKU-level identifier
+        if product_lower in sku_level:
+            return ("SkuPricing", sku_level[product_lower])
+        
+        # Check if it's a known product-level identifier
+        if product_lower in product_level:
+            return ("ProductPricing", product_level[product_lower])
+        
+        # Default: assume it's a custom SKU and use SkuPricing
+        # This allows flexibility for new SKUs not yet in our list
+        self.logger.warning(
+            f"Unknown product/SKU '{product}'. Defaulting to SkuPricing. "
+            f"See https://docs.github.com/en/enterprise-cloud@latest/billing/reference/product-and-sku-names"
+        )
+        return ("SkuPricing", product_lower)
     
     def _budget_exists_for_cost_center(self, budgets: List[Dict], cost_center_id: str, product_sku: str) -> bool:
         """
