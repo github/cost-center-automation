@@ -1263,6 +1263,7 @@ class GitHubCopilotManager:
         
         # Product-level identifiers (ProductPricing budgets)
         # These track spending across the entire product
+        # This is non-exhaustive and non-authoritative. For a full list of SKUs, refer to https://docs.github.com/enterprise-cloud@latest/billing/reference/product-and-sku-names
         product_level = {
             'actions': 'actions',
             'packages': 'packages', 
