@@ -1275,6 +1275,7 @@ class GitHubCopilotManager:
         # SKU-level identifiers (SkuPricing budgets)
         # These track spending for specific SKUs within a product
         # Common SKUs users might want to budget for
+        # This is non-exhaustive and non-authoritative. For a full list of SKUs, refer to https://docs.github.com/enterprise-cloud@latest/billing/reference/product-and-sku-names
         sku_level = {
             # GitHub Copilot SKUs
             'copilot_premium_request': 'copilot_premium_request',
