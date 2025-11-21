@@ -12,6 +12,8 @@ import yaml
 from dotenv import load_dotenv
 from urllib.parse import urlparse
 
+from src.config_models import RepositoryConfig
+
 
 class ConfigManager:
     """Manages application configuration from files and environment variables."""
@@ -118,6 +120,21 @@ class ConfigManager:
             
             # Incremental processing configuration
             self.enable_incremental = cost_center_config.get("enable_incremental", False)
+            
+            # Cost center assignment mode configuration
+            # Supports: 'users' (default), 'teams', or 'repository'
+            github_cost_centers_config = config_data.get("github", {}).get("cost_centers", {})
+            self.github_cost_centers_mode = github_cost_centers_config.get("mode", "users")
+            
+            # Repository mode configuration
+            if self.github_cost_centers_mode == "repository":
+                repo_config_data = github_cost_centers_config.get("repository_config", {})
+                self.github_cost_centers_repository_config = RepositoryConfig(repo_config_data)
+                
+                self.logger.info(
+                    f"Repository mode enabled with {len(self.github_cost_centers_repository_config.explicit_mappings)} "
+                    f"explicit mapping(s)"
+                )
 
             
             # Teams integration configuration
@@ -133,6 +150,14 @@ class ConfigManager:
                 "remove_users_no_longer_in_teams",
                 teams_config.get("remove_orphaned_users", True)  # Fallback to old key
             )
+            
+            # Budget configuration
+            budget_config = config_data.get("budgets", {})
+            self.budgets_enabled = budget_config.get("enabled", False)
+            self.budget_products = budget_config.get("products", {
+                "copilot": {"amount": 100, "enabled": True},
+                "actions": {"amount": 125, "enabled": True}
+            })
             
             # Store full config for other methods
             self.config = config_data

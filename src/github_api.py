@@ -519,7 +519,6 @@ class GitHubCopilotManager:
             self.logger.error("Enterprise name required for listing enterprise teams")
             return []
         
-        self.logger.info(f"Fetching enterprise teams for: {self.enterprise_name}")
         url = f"{self.base_url}/enterprises/{self.enterprise_name}/teams"
         
         all_teams = []
@@ -542,7 +541,6 @@ class GitHubCopilotManager:
                     break
                 
                 all_teams.extend(teams)
-                self.logger.info(f"Fetched page {page} with {len(teams)} enterprise teams")
                 
                 page += 1
                 
@@ -554,7 +552,6 @@ class GitHubCopilotManager:
                 self.logger.error(f"Failed to fetch enterprise teams: {str(e)}")
                 break
         
-        self.logger.info(f"Total enterprise teams found: {len(all_teams)}")
         return all_teams
     
     def get_enterprise_team_members(self, team_slug: str) -> List[Dict]:
@@ -610,7 +607,6 @@ class GitHubCopilotManager:
                 self.logger.warning(f"Failed to fetch members for enterprise team {team_slug}: {str(e)}")
                 break
         
-        self.logger.info(f"Total members found in enterprise team {team_slug}: {len(all_members)}")
         return all_members
     
     def get_all_active_cost_centers(self) -> Dict[str, str]:
@@ -1090,7 +1086,7 @@ class GitHubCopilotManager:
             self.logger.warning(f"Failed to check budget for cost center '{cost_center_name}' (ID: {cost_center_id}): {str(e)}")
             return False
     
-    def create_cost_center_budget(self, cost_center_id: str, cost_center_name: str) -> bool:
+    def create_cost_center_budget(self, cost_center_id: str, cost_center_name: str, budget_amount: int = 100) -> bool:
         """
         Create a budget for a cost center using the GitHub Enterprise Budgets API.
         
@@ -1100,6 +1096,7 @@ class GitHubCopilotManager:
         Args:
             cost_center_id: UUID of the cost center to create a budget for
             cost_center_name: Name of the cost center (used for logging only)
+            budget_amount: Budget amount in dollars (default: 100)
             
         Returns:
             True if budget was created successfully, False otherwise
@@ -1126,7 +1123,7 @@ class GitHubCopilotManager:
             "budget_type": "SkuPricing",
             "budget_product_sku": "copilot_premium_request",
             "budget_scope": "cost_center",
-            "budget_amount": 0,
+            "budget_amount": budget_amount,
             "prevent_further_usage": True,
             "budget_entity_name": cost_center_id,  # Use UUID instead of name
             "budget_alerting": {
@@ -1153,4 +1150,399 @@ class GitHubCopilotManager:
             return False
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Failed to create budget for cost center '{cost_center_name}' (ID: {cost_center_id}): {str(e)}")
+            return False
+
+    def check_cost_center_has_product_budget(self, cost_center_id: str, cost_center_name: str, product: str) -> bool:
+        """
+        Check if a cost center already has a budget for a specific product.
+        
+        Args:
+            cost_center_id: UUID of the cost center to check
+            cost_center_name: Name of the cost center to check
+            product: Product name (e.g., 'actions', 'copilot')
+            
+        Returns:
+            True if a budget already exists for this cost center and product, False otherwise
+        """
+        if not self.use_enterprise or not self.enterprise_name:
+            self.logger.warning("Budget checking only available for GitHub Enterprise")
+            return False
+        
+        url = f"{self.base_url}/enterprises/{self.enterprise_name}/settings/billing/budgets"
+        
+        try:
+            budgets = self._make_request(url)
+            
+            # Get the product SKU for comparison
+            _, product_sku = self._get_budget_type_and_sku(product)
+            
+            # Check if budget exists for this cost center and product
+            if self._budget_exists_for_cost_center(budgets, cost_center_id, product_sku):
+                self.logger.info(f"Found existing {product} budget for cost center: {cost_center_name}")
+                return True
+            
+            return False
+            
+        except requests.exceptions.RequestException as e:
+            self.logger.warning(f"Failed to check {product} budget for cost center '{cost_center_name}' (ID: {cost_center_id}): {str(e)}")
+            return False
+
+    def create_product_budget(self, cost_center_id: str, cost_center_name: str, product: str, amount: int) -> bool:
+        """
+        Create a product-level budget for a cost center.
+        
+        Args:
+            cost_center_id: UUID of the cost center
+            cost_center_name: Name of the cost center (for logging)
+            product: Product name (e.g., 'actions', 'copilot')
+            amount: Budget amount in dollars
+            
+        Returns:
+            True if budget was created successfully, False otherwise
+        """
+        if not self.use_enterprise or not self.enterprise_name:
+            self.logger.error("Budget creation only available for GitHub Enterprise")
+            return False
+        
+        # Check if budget already exists
+        if self.check_cost_center_has_product_budget(cost_center_id, cost_center_name, product):
+            self.logger.info(f"{product.title()} budget already exists for cost center: {cost_center_name}")
+            return True
+        
+        url = f"{self.base_url}/enterprises/{self.enterprise_name}/settings/billing/budgets"
+        
+        # Determine budget type and product SKU based on the product
+        budget_type, product_sku = self._get_budget_type_and_sku(product)
+        
+        payload = {
+            "budget_type": budget_type,
+            "budget_product_sku": product_sku,
+            "budget_scope": "cost_center",
+            "budget_amount": amount,
+            "prevent_further_usage": True,
+            "budget_entity_name": cost_center_id,  # Use UUID
+            "budget_alerting": {
+                "will_alert": False,
+                "alert_recipients": []
+            }
+        }
+        
+        headers = {
+            "accept": "application/vnd.github+json",
+            "x-github-api-version": "2022-11-28",
+            "content-type": "application/json"
+        }
+        
+        try:
+            response = self._make_request(url, method='POST', json=payload, custom_headers=headers)
+            self.logger.info(f"✅ Successfully created ${amount} {product} budget for cost center: {cost_center_name}")
+            return True
+            
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"❌ Failed to create {product} budget for cost center '{cost_center_name}': {str(e)}")
+            return False
+
+    def _get_budget_type_and_sku(self, product: str) -> tuple[str, str]:
+        """
+        Get the appropriate budget type and product SKU for a given product name.
+        
+        GitHub supports two types of budgets:
+        1. ProductPricing: Budgets that track spending across an entire product
+        2. SkuPricing: Budgets that track spending for a specific SKU within a product
+        
+        Args:
+            product: Product name or SKU (e.g., 'actions', 'copilot', 'copilot_premium_request')
+            
+        Returns:
+            Tuple of (budget_type, product_sku)
+            
+        Reference:
+            https://docs.github.com/en/enterprise-cloud@latest/billing/reference/product-and-sku-names
+        """
+        product_lower = product.lower()
+        
+        # Product-level identifiers (ProductPricing budgets)
+        # These track spending across the entire product
+        # This is non-exhaustive and non-authoritative. For a full list of SKUs, refer to https://docs.github.com/enterprise-cloud@latest/billing/reference/product-and-sku-names
+        product_level = {
+            'actions': 'actions',
+            'packages': 'packages', 
+            'codespaces': 'codespaces',
+            'copilot': 'copilot',
+            'ghas': 'ghas',
+            'ghec': 'ghec'
+        }
+        
+        # SKU-level identifiers (SkuPricing budgets)
+        # These track spending for specific SKUs within a product
+        # Common SKUs users might want to budget for
+        # This is non-exhaustive and non-authoritative. For a full list of SKUs, refer to https://docs.github.com/enterprise-cloud@latest/billing/reference/product-and-sku-names
+        sku_level = {
+            # GitHub Copilot SKUs
+            'copilot_premium_request': 'copilot_premium_request',
+            'copilot_agent_premium_request': 'copilot_agent_premium_request',
+            'copilot_enterprise': 'copilot_enterprise',
+            'copilot_for_business': 'copilot_for_business',
+            'copilot_standalone': 'copilot_standalone',
+            
+            # GitHub Actions SKUs (common examples)
+            'actions_linux': 'actions_linux',
+            'actions_macos': 'actions_macos',
+            'actions_windows': 'actions_windows',
+            'actions_storage': 'actions_storage',
+            
+            # GitHub Codespaces SKUs
+            'codespaces_storage': 'codespaces_storage',
+            'codespaces_prebuild_storage': 'codespaces_prebuild_storage',
+            
+            # GitHub Packages SKUs
+            'packages_storage': 'packages_storage',
+            'packages_bandwidth': 'packages_bandwidth',
+            
+            # GitHub Advanced Security SKUs
+            'ghas_licenses': 'ghas_licenses',
+            'ghas_code_security_licenses': 'ghas_code_security_licenses',
+            'ghas_secret_protection_licenses': 'ghas_secret_protection_licenses',
+            
+            # Other SKUs
+            'ghec_licenses': 'ghec_licenses',
+            'git_lfs_storage': 'git_lfs_storage',
+            'git_lfs_bandwidth': 'git_lfs_bandwidth',
+            'models_inference': 'models_inference',
+            'spark_premium_request': 'spark_premium_request'
+        }
+        
+        # Check if it's a known SKU-level identifier
+        if product_lower in sku_level:
+            return ("SkuPricing", sku_level[product_lower])
+        
+        # Check if it's a known product-level identifier
+        if product_lower in product_level:
+            return ("ProductPricing", product_level[product_lower])
+        
+        # Default: assume it's a custom SKU and use SkuPricing
+        # This allows flexibility for new SKUs not yet in our list
+        self.logger.warning(
+            f"Unknown product/SKU '{product}'. Defaulting to SkuPricing. "
+            f"See https://docs.github.com/en/enterprise-cloud@latest/billing/reference/product-and-sku-names"
+        )
+        return ("SkuPricing", product_lower)
+    
+    def _budget_exists_for_cost_center(self, budgets: List[Dict], cost_center_id: str, product_sku: str) -> bool:
+        """
+        Check if a budget exists for a specific cost center and product SKU.
+        
+        Args:
+            budgets: List of budget dictionaries to search through
+            cost_center_id: UUID of the cost center to check
+            product_sku: Product SKU to match
+            
+        Returns:
+            True if a matching budget exists, False otherwise
+        """
+        for budget in budgets:
+            if (budget.get('budget_scope') == 'cost_center' and 
+                budget.get('budget_entity_name') == cost_center_id and
+                budget.get('budget_product_sku') == product_sku):
+                return True
+        return False
+    
+    # ===========================
+    # Custom Properties API Methods
+    # ===========================
+    
+    def get_org_custom_properties(self, org: str) -> List[Dict]:
+        """Get all custom property definitions for an organization.
+        
+        Args:
+            org: Organization name
+            
+        Returns:
+            List of custom property definitions with their schemas
+            
+        Example response:
+            [
+                {
+                    "property_name": "environment",
+                    "value_type": "single_select",
+                    "required": true,
+                    "default_value": "production",
+                    "allowed_values": ["production", "development"]
+                },
+                ...
+            ]
+        """
+        url = f"{self.base_url}/orgs/{org}/properties/schema"
+        self.logger.info(f"Fetching custom property schema for organization: {org}")
+        
+        try:
+            properties = self._make_request(url)
+            self.logger.info(f"Found {len(properties)} custom properties defined for organization: {org}")
+            return properties
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Failed to fetch custom properties for organization '{org}': {str(e)}")
+            return []
+    
+    def get_org_repositories_with_properties(self, org: str, page: int = 1, per_page: int = 100, 
+                                            query: Optional[str] = None) -> Dict:
+        """Get repositories with their custom property values for an organization.
+        
+        Args:
+            org: Organization name
+            page: Page number for pagination (default: 1)
+            per_page: Results per page, max 100 (default: 100)
+            query: Optional repository search query using GitHub search syntax
+                   Example: "custom_properties:environment:production"
+            
+        Returns:
+            Dict containing repository list with their custom properties
+            
+        Example response:
+            [
+                {
+                    "repository_id": 1296269,
+                    "repository_name": "Hello-World",
+                    "repository_full_name": "octocat/Hello-World",
+                    "properties": [
+                        {"property_name": "environment", "value": "production"},
+                        {"property_name": "team", "value": "platform"}
+                    ]
+                },
+                ...
+            ]
+        """
+        url = f"{self.base_url}/orgs/{org}/properties/values"
+        params = {"page": page, "per_page": per_page}
+        
+        if query:
+            params["repository_query"] = query
+            self.logger.info(f"Fetching repositories for organization '{org}' with query: {query} (page {page})")
+        else:
+            self.logger.info(f"Fetching repositories with custom properties for organization: {org} (page {page})")
+        
+        try:
+            repositories = self._make_request(url, params=params)
+            self.logger.debug(f"Fetched {len(repositories)} repositories from page {page}")
+            return repositories
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Failed to fetch repositories with properties for organization '{org}': {str(e)}")
+            return []
+    
+    def get_all_org_repositories_with_properties(self, org: str, query: Optional[str] = None) -> List[Dict]:
+        """Get all repositories with their custom property values (handles pagination automatically).
+        
+        Args:
+            org: Organization name
+            query: Optional repository search query using GitHub search syntax
+            
+        Returns:
+            List of all repositories with their custom properties
+        """
+        all_repositories = []
+        page = 1
+        per_page = 100
+        
+        while True:
+            repositories = self.get_org_repositories_with_properties(org, page, per_page, query)
+            
+            if not repositories:
+                break
+            
+            all_repositories.extend(repositories)
+            
+            # Check if we have more pages
+            if len(repositories) < per_page:
+                break
+            
+            page += 1
+        
+        self.logger.info(f"Total repositories with custom properties found: {len(all_repositories)}")
+        return all_repositories
+    
+    def get_repository_custom_properties(self, owner: str, repo: str) -> List[Dict]:
+        """Get custom properties for a specific repository.
+        
+        Args:
+            owner: Repository owner (organization or user)
+            repo: Repository name
+            
+        Returns:
+            List of custom property name-value pairs
+            
+        Example response:
+            [
+                {"property_name": "environment", "value": "production"},
+                {"property_name": "team", "value": "platform"}
+            ]
+        """
+        url = f"{self.base_url}/repos/{owner}/{repo}/properties/values"
+        self.logger.debug(f"Fetching custom properties for repository: {owner}/{repo}")
+        
+        try:
+            properties = self._make_request(url)
+            return properties
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Failed to fetch custom properties for repository '{owner}/{repo}': {str(e)}")
+            return []
+    
+    def add_repositories_to_cost_center(self, cost_center_id: str, repository_names: List[str]) -> bool:
+        """Add multiple repositories to a specific cost center.
+        
+        Args:
+            cost_center_id: Target cost center ID (UUID)
+            repository_names: List of repository full names (strings in 'org/repo' format) to add
+            
+        Returns:
+            True if successful, False otherwise
+            
+        Note:
+            The API may have a maximum number of repositories per request.
+            Currently supporting batch assignment similar to user assignment.
+        """
+        if not self.use_enterprise or not self.enterprise_name:
+            self.logger.warning("Cost center assignment updates only available for GitHub Enterprise")
+            return False
+        
+        if not repository_names:
+            self.logger.warning("No repository names provided to add to cost center")
+            return False
+        
+        self.logger.info(f"Adding {len(repository_names)} repositories to cost center {cost_center_id}")
+        
+        url = f"{self.base_url}/enterprises/{self.enterprise_name}/settings/billing/cost-centers/{cost_center_id}/resource"
+        
+        payload = {
+            "repositories": repository_names
+        }
+        
+        # Set proper headers including API version
+        headers = {
+            "accept": "application/vnd.github+json",
+            "x-github-api-version": "2022-11-28",
+            "content-type": "application/json"
+        }
+        
+        try:
+            response = self.session.post(url, json=payload, headers=headers)
+            
+            # Handle rate limiting
+            if response.status_code == 429:
+                reset_time = int(response.headers.get('X-RateLimit-Reset', time.time() + 60))
+                wait_time = reset_time - int(time.time()) + 1
+                self.logger.warning(f"Rate limit hit. Waiting {wait_time} seconds...")
+                time.sleep(wait_time)
+                return self.add_repositories_to_cost_center(cost_center_id, repository_ids)
+            
+            if response.status_code in [200, 201, 204]:
+                self.logger.info(f"✅ Successfully added {len(repository_ids)} repositories to cost center {cost_center_id}")
+                return True
+            else:
+                self.logger.error(
+                    f"❌ Failed to add repositories to cost center {cost_center_id}: "
+                    f"{response.status_code} {response.text}"
+                )
+                return False
+                
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"❌ Error adding repositories to cost center {cost_center_id}: {str(e)}")
             return False

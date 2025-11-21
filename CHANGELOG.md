@@ -8,7 +8,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Repository-Based Cost Center Assignment**: New mode for assigning repositories to cost centers based on custom properties
+  - Explicit mapping mode: Map custom property values to specific cost centers
+  - Works with any repository custom property (team, service, environment, etc.)
+  - Automatic cost center creation for new mappings
+  - Full pagination support for organizations with many repositories
+  - Comprehensive logging showing repository discovery, matching, and assignment
+- New module `repository_cost_center_manager.py` for repository-based assignment logic
+- New GitHub API methods for custom properties:
+  - `get_org_custom_properties()`: Fetch organization custom property schema
+  - `get_org_repositories_with_properties()`: List repositories with their property values (paginated)
+  - `get_all_org_repositories_with_properties()`: Automatic pagination wrapper
+  - `get_repository_custom_properties()`: Get properties for a specific repository
+  - `add_repositories_to_cost_center()`: Batch assign repositories to cost centers
+- Configuration support for repository mode in `config_manager.py`
+  - New `github.cost_centers.mode` setting (supports "users", "teams", or "repository")
+  - New `github.cost_centers.repository_config` section with validation
+  - Explicit mappings configuration with property name and value matching
+- Documentation for repository mode in README.md with examples
+- Detailed design document in `REPOSITORY_COST_CENTER_DESIGN.md`
 - **GitHub Enterprise Data Resident Support**: Full support for enterprises running on GitHub Enterprise Data Resident (GHE.com) with custom API endpoints
+- **Enhanced Budget System**: Product-agnostic budget creation with multi-product support
+  - `create_product_budget()`: Generic method for creating budgets for any product (Actions, Copilot, Packages, etc.)
+  - `check_cost_center_has_product_budget()`: Check for existing budgets before creation
+  - Configurable budget amounts (no longer hardcoded to $0)
+  - Support for both ProductPricing (Actions) and SkuPricing (Copilot) budget types
+  - Product registry system for easy extension to new products
+- **Budget Configuration System**: YAML-based budget configuration
+  - `budgets.enabled`: Global budget creation toggle
+  - `budgets.products`: Per-product configuration with amounts and enable/disable flags
+  - Support for Copilot PRU and Actions budgets with different default amounts
+  - Extensible design for future products (Packages, Codespaces, etc.)
+- Repository mode now supports budget creation with `--create-budgets` flag
 - New configuration option `github.api_base_url` in config files for custom API endpoints
 - New environment variable `GITHUB_API_BASE_URL` for custom API endpoint configuration
 - Automatic API URL validation with support for:
@@ -19,6 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated documentation in README.md, config.example.yaml, and .env.example
 
 ### Changed
+- Updated `main.py` to support three operational modes (PRU-based, Teams-based, Repository-based)
+- Renamed "Two Operational Modes" to "Three Operational Modes" in documentation
 - `GitHubCopilotManager` now uses configurable API base URL instead of hardcoded value
 - URL validation and normalization in `ConfigManager` to ensure proper API endpoint formatting
 
