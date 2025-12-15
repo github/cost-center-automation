@@ -42,7 +42,7 @@ jobs:
           pip install -r requirements.txt
           
       - name: Restore cost center cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .cache/
           key: cost-center-cache-${{ github.repository }}-${{ hashFiles('**/config.yaml') }}
