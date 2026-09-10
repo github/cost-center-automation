@@ -29,10 +29,10 @@ jobs:
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.11'
           
@@ -42,7 +42,7 @@ jobs:
           pip install -r requirements.txt
           
       - name: Restore cost center cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .cache/
           key: cost-center-cache-${{ github.repository }}-${{ hashFiles('**/config.yaml') }}
@@ -85,7 +85,7 @@ jobs:
           
       - name: Upload cache statistics as artifact
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: cache-stats-${{ github.run_number }}
           path: |
@@ -99,10 +99,10 @@ jobs:
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.11'
           
@@ -112,7 +112,7 @@ jobs:
           pip install -r requirements.txt
           
       - name: Download cache artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           name: cache-stats-${{ github.run_number }}
           path: .cache/
@@ -132,7 +132,7 @@ jobs:
           echo '```' >> performance-report.md
           
       - name: Upload performance report
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: performance-report-${{ github.run_number }}
           path: performance-report.md
