@@ -23,10 +23,10 @@ jobs:
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
     
     - name: Set up Python
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
       with:
         python-version: '3.11'
         cache: 'pip'
@@ -35,7 +35,7 @@ jobs:
       run: pip install -r requirements.txt
     
     - name: Restore timestamp from cache
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: exports/.last_run_timestamp
         key: incremental-timestamp-${{ github.repository }}
@@ -83,7 +83,7 @@ jobs:
     
     - name: Save timestamp to cache
       if: always()
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: exports/.last_run_timestamp
         key: incremental-timestamp-${{ github.repository }}-${{ github.run_number }}
@@ -103,7 +103,7 @@ jobs:
     
     - name: Upload logs and state
       if: always()
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
       with:
         name: cost-center-logs-${{ github.run_number }}
         path: |
